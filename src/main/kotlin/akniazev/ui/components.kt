@@ -1,5 +1,6 @@
 package akniazev.ui
 
+import akniazev.common.DisplayableFile
 import com.sun.nio.zipfs.ZipPath
 import java.nio.file.Path
 import javax.swing.table.AbstractTableModel
@@ -7,20 +8,26 @@ import javax.swing.table.AbstractTableModel
 
 
 class TableModel : AbstractTableModel() {
-    var paths: List<Path> = emptyList()
-        set(newPaths) {
-            field = newPaths
-            fireTableDataChanged()
-        }
+    private val columns = listOf("Filename", "Extension")
+    var parentFile: DisplayableFile? = null
+        private set
+    var files: List<DisplayableFile> = emptyList()
+        private set
 
-    override fun getRowCount() = paths.size
-    override fun getColumnCount() = 2
+    override fun getRowCount() = files.size
+    override fun getColumnCount() = columns.size
+    override fun getColumnName(col: Int): String = columns[col]
     override fun getValueAt(rowIndex: Int, columnIndex: Int): Any {
-        val path = paths[rowIndex]
-        if (rowIndex == 0 && path.parent != null) return ".."
+        val file = files[rowIndex]
         return when(columnIndex) {
-            0 -> if (path is ZipPath) path.toString() else path.toFile().name
-            else -> if (path is ZipPath) "" else path.toFile().extension
+            0 -> file.name
+            else -> file.extension
         }
+    }
+
+    fun updateTable(newParent: DisplayableFile?, newFiles: List<DisplayableFile>) {
+        parentFile = newParent
+        files = newFiles
+        fireTableDataChanged()
     }
 }
