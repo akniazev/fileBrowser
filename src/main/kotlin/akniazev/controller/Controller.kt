@@ -13,6 +13,7 @@ import java.awt.Desktop
 import java.awt.event.MouseEvent
 import java.net.URI
 import java.nio.file.*
+import java.util.*
 import javax.swing.JTable
 import kotlin.streams.asSequence
 
@@ -25,6 +26,9 @@ class ControllerImpl : Controller {
     private var zipExit: SystemFile? = null
     private var ftpConnected = false
     private var ftpFileSystem: FtpFS = null
+    private val navigateBackStack: Deque<DisplayableFile> = LinkedList()
+    private val navigateForwardStack: Deque<DisplayableFile> = LinkedList()
+
 
 
     init {
@@ -33,8 +37,18 @@ class ControllerImpl : Controller {
                   else null
     }
 
-    override fun changeRoot(path: Path, model: TableModel) {
-        model.updateTable(null, Files.list(path).asSequence().map(::SystemFile).toList())
+    override fun navigateTo(path: Path, model: TableModel) {
+        if (Files.exists(path)) {
+            if (Files.isDirectory(path)) {
+                val parent = if (path.parent != null) SystemFile(path.parent) else null
+                model.updateTable(parent, Files.list(path).asSequence().map(::SystemFile).toList())
+            } else {
+                val directoryPath = path.parent
+                val parent = if (directoryPath.parent != null) SystemFile(directoryPath.parent) else null
+                model.updateTable(parent, Files.list(directoryPath).asSequence().map(::SystemFile).toList())
+
+            }
+        }
     }
 
     override fun connectToFtp(host: String, port: String, user: String, pass: String, model: TableModel) {
@@ -116,6 +130,15 @@ class ControllerImpl : Controller {
     }
 
 
+    override fun navigateBack(model: TableModel) {
+        val newPath = navigateBackStack.pop()
+        navigateForwardStack.push(newPath)
+//        navigateTo(newPath.)
+    }
+
+    override fun navigateForward(model: TableModel) {
+        TODO("not implemented")
+    }
 
     private fun getFileSystem(path: Path): FileSystem {
         val uri = URI.create("jar:file:///${path.toString().replace("\\", "/")}")
@@ -134,6 +157,8 @@ interface Controller {
     fun handleTableClick(e: MouseEvent?)
     fun toPreviousLevel(model: TableModel)
     fun connectToFtp(host: String, port: String, user: String, pass: String, model: TableModel)
-    fun changeRoot(path: Path, model: TableModel)
+    fun navigateTo(path: Path, model: TableModel)
+    fun navigateBack(model: TableModel)
+    fun navigateForward(model: TableModel)
 }
 

@@ -2,7 +2,7 @@ package akniazev
 
 import akniazev.controller.ControllerImpl
 import akniazev.ui.MainFrame
-import org.apache.commons.vfs2.VFS
+
 import org.mockftpserver.fake.FakeFtpServer
 import org.mockftpserver.fake.UserAccount
 import org.mockftpserver.fake.filesystem.DirectoryEntry
@@ -13,11 +13,10 @@ import javax.swing.SwingUtilities
 val fakeFtpServer = FakeFtpServer()
 
 fun main(args: Array<String>) {
-    println("has ftp: ${VFS.getManager().hasProvider("ftp")}")
-    setup()
-    SwingUtilities.invokeLater {
-        MainFrame(ControllerImpl())
-    }
+//    println("has ftp: ${VFS.getManager().hasProvider("ftp")}")
+//    setup()
+
+    SwingUtilities.invokeLater { MainFrame(ControllerImpl()) }
 
 }
 
