@@ -10,10 +10,9 @@ interface DisplayableFile {
     val name: String
     val parent: Any?
     val isDirectory: Boolean
-    val isRoot: Boolean
-        get() = parent == null
-    val extension: String
-        get() = if (isDirectory) "" else name.substringAfterLast('.', "")
+    val isRoot: Boolean get() = parent == null
+    val extension: String get() = if (isDirectory) "" else name.substringAfterLast('.', "")
+    val type: FileType get() = if (isDirectory) FileType.DIRECTORY else FileType.fromExtension(extension)
 }
 
 class SystemFile(val path: Path) : DisplayableFile {
@@ -33,4 +32,18 @@ class FtpFile(val file: FileObject) : DisplayableFile {
     override val name: String = file.name.baseName
     override val isDirectory: Boolean = file.isFolder
     override val parent: FileObject? = file.parent
+}
+
+enum class FileType {
+    DIRECTORY, TEXT, IMAGE, UNKNOWN;
+
+    companion object {
+        private val textFiles = setOf("txt", "js", "log", "json")
+        private val imageFiles = setOf("png", "jpeg", "jpg")
+        fun fromExtension(ext: String): FileType = when(ext.toLowerCase()) {
+            in textFiles -> TEXT
+            in imageFiles -> IMAGE
+            else -> UNKNOWN
+        }
+    }
 }

@@ -1,33 +1,40 @@
 package akniazev.controller
 
-import akniazev.common.DisplayableFile
-import akniazev.common.FtpFile
-import akniazev.common.SystemFile
-import akniazev.common.ZipFile
+import akniazev.common.*
 import akniazev.ui.TableModel
+import akniazev.ui.View
 import com.sun.nio.zipfs.ZipPath
 import org.apache.commons.vfs2.FileSystemOptions
 import org.apache.commons.vfs2.VFS
 import org.apache.commons.vfs2.provider.ftp.FtpFileSystemConfigBuilder
 import java.awt.Desktop
 import java.awt.event.MouseEvent
+import java.awt.image.BufferedImage
 import java.net.URI
+import java.nio.CharBuffer
 import java.nio.file.*
+import java.nio.file.attribute.BasicFileAttributeView
+import java.nio.file.attribute.FileTime
+import java.time.ZoneId
+import java.time.ZonedDateTime
 import java.util.*
+import javax.imageio.ImageIO
 import javax.swing.JTable
 import kotlin.streams.asSequence
 
-typealias FtpFS = org.apache.commons.vfs2.FileSystem?
+typealias FtpFS = org.apache.commons.vfs2.FileSystem
 
 
 class ControllerImpl : Controller {
 
     private val desktop: Desktop?
     private var zipExit: SystemFile? = null
-    private var ftpConnected = false
-    private var ftpFileSystem: FtpFS = null
+    private var ftpConnected: Boolean = false
+    private var ftpFileSystem: FtpFS? = null
     private val navigateBackStack: Deque<DisplayableFile> = LinkedList()
     private val navigateForwardStack: Deque<DisplayableFile> = LinkedList()
+    private val buffer: CharBuffer = CharBuffer.allocate(100)
+    override lateinit var view: View
 
 
 
@@ -63,12 +70,14 @@ class ControllerImpl : Controller {
         model.updateTable(null, list)
     }
 
-    override fun handleTableClick(e: MouseEvent?) {
-        if (e?.clickCount == 2) {
-            val table = e.source as JTable
-            val model = table.model as TableModel
-            val file = model.files[table.selectedRow]
+    override fun handleTableClick(e: MouseEvent) {
+        val table = e.source as JTable
+        val model = table.model as TableModel
+        val file = model.files[table.selectedRow]
+        val type = file.type
 
+
+        if (e.clickCount == 2) {
             when(file) {
                 is ZipFile -> {
                     // todo extract fun
@@ -98,6 +107,32 @@ class ControllerImpl : Controller {
                     }
                 }
                 else -> throw IllegalStateException("Unknown file type")
+            }
+        } else if (type == FileType.TEXT || type == FileType.IMAGE) {
+            when (file) {
+                is SystemFile, is ZipFile -> {
+                    val path = (file as? SystemFile)?.path ?: (file as? ZipFile)?.file
+                    val attrs = Files.getFileAttributeView(path, BasicFileAttributeView::class.java).readAttributes()
+                    val createdTime = attrs.creationTime().toSystemDateTime() // todo fix possible npe
+                    val lastAccessedTime = attrs.lastAccessTime().toSystemDateTime()
+                    val size = attrs.size()
+                    println("created: $createdTime, accessed $lastAccessedTime, size $size")
+                    if (type == FileType.TEXT) {
+                        Files.newBufferedReader(path).use { reader ->
+                            val read = reader.read(buffer)
+                            buffer.rewind()
+                            val result = buffer.substring(0, read)
+                            println("From buffer: $result")
+                            view.previewText(file.name, createdTime, lastAccessedTime, size, result)
+                        }
+                    } else {
+                        val image = ImageIO.read(path?.toUri()?.toURL())
+                        view.previewImage(file.name, createdTime, lastAccessedTime, size, getScaledImage(image))
+                    }
+                }
+                is FtpFile -> {
+//                    file.file.content
+                }
             }
         }
     }
@@ -149,12 +184,22 @@ class ControllerImpl : Controller {
         }
     }
 
+
+    private fun getScaledImage(img: BufferedImage): BufferedImage {
+        val result = BufferedImage(160, 160, BufferedImage.TYPE_INT_RGB)
+        val graphics = result.createGraphics()
+        graphics.drawImage(img, 0, 0, 160, 160, null)
+        graphics.dispose()
+        return result
+    }
+
 }
 
 
 
 interface Controller {
-    fun handleTableClick(e: MouseEvent?)
+    var view: View
+    fun handleTableClick(e: MouseEvent)
     fun toPreviousLevel(model: TableModel)
     fun connectToFtp(host: String, port: String, user: String, pass: String, model: TableModel)
     fun navigateTo(path: Path, model: TableModel)
@@ -162,3 +207,4 @@ interface Controller {
     fun navigateForward(model: TableModel)
 }
 
+fun FileTime.toSystemDateTime(): ZonedDateTime = this.toInstant().atZone(ZoneId.systemDefault())

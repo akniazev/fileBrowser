@@ -1,23 +1,20 @@
 package akniazev.ui
 
 import akniazev.controller.Controller
-import akniazev.controller.ControllerImpl
-import akniazev.ui.IconCellRenderer
-import akniazev.ui.TableModel
 import java.awt.*
 import java.awt.event.KeyAdapter
 import java.awt.event.KeyEvent
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
+import java.awt.image.BufferedImage
 import java.nio.file.FileSystems
 import java.nio.file.Files
 import java.nio.file.Paths
+import java.time.ZonedDateTime
 import javax.swing.*
-import javax.swing.table.AbstractTableModel
-import javax.swing.table.TableCellRenderer
 
 
-class MainFrame(private val controller: Controller) : JFrame() {
+class MainFrame(private val controller: Controller) : JFrame(), View {
 
     private val rightPanel = JPanel()
     private val centralPanel = JPanel()
@@ -31,14 +28,24 @@ class MainFrame(private val controller: Controller) : JFrame() {
     private val extensionFilter = JComboBox<String>() // todo prefill
     private val connectFtpBtn = JButton("Connect")
 
-    private val imagePanel = JPanel()
-
     private val backBtn = JButton("Back")
     private val forwardBtn = JButton("Forward")
     private val upBtn = JButton("Up")
     private val addressBar = JTextField()
 
+
+    private val previewNameLabel = JLabel()
+    private val previewCreatedLabel = JLabel()
+    private val previewAccessedLabel = JLabel()
+    private val previewSizeLabel = JLabel()
+    private val previewImageLabel = JLabel()
+    private val previewText = JTextArea()
+    private val previewContentLabel = JLabel()
+    private val contentPanel = JPanel()
+
     init {
+        controller.view = this
+
         layout = BorderLayout()
         size = Dimension(1000, 600)
         minimumSize = Dimension(1000, 600)
@@ -82,16 +89,45 @@ class MainFrame(private val controller: Controller) : JFrame() {
         addressBar.preferredSize= Dimension(230, 30)
 
 
-//        imagePanel.border = BorderFactory.createEmptyBorder()
+
+        rightPanel.border = BorderFactory.createEmptyBorder(10, 20, 0, 20)
         rightPanel.add(Box.createRigidArea(Dimension(0, 40)))
-        imagePanel.preferredSize = Dimension(160, 160)
-        imagePanel.minimumSize = Dimension(160, 160)
-        imagePanel.maximumSize = Dimension(160, 160)
-        rightPanel.add(imagePanel)
 
+        rightPanel.add(JLabel("Name"))
+        rightPanel.add(Box.createRigidArea(Dimension(0, 20)))
+        rightPanel.add(previewNameLabel)
+        rightPanel.add(Box.createRigidArea(Dimension(0, 20)))
 
+        rightPanel.add(JLabel("Size"))
+        rightPanel.add(Box.createRigidArea(Dimension(0, 20)))
+        rightPanel.add(previewSizeLabel)
+        rightPanel.add(Box.createRigidArea(Dimension(0, 20)))
 
+        rightPanel.add(JLabel("Created"))
+        rightPanel.add(Box.createRigidArea(Dimension(0, 20)))
+        rightPanel.add(previewCreatedLabel)
+        rightPanel.add(Box.createRigidArea(Dimension(0, 20)))
 
+        rightPanel.add(JLabel("Accessed"))
+        rightPanel.add(Box.createRigidArea(Dimension(0, 20)))
+        rightPanel.add(previewAccessedLabel)
+        rightPanel.add(Box.createRigidArea(Dimension(0, 20)))
+
+        rightPanel.add(previewContentLabel)
+        rightPanel.add(Box.createRigidArea(Dimension(0, 20)))
+        contentPanel.preferredSize = Dimension(160, 160)
+        contentPanel.minimumSize = Dimension(160, 160)
+        contentPanel.maximumSize = Dimension(160, 160)
+        contentPanel.alignmentX = Component.LEFT_ALIGNMENT
+
+        previewImageLabel.preferredSize = Dimension(160, 160)
+        previewImageLabel.minimumSize = Dimension(160, 160)
+
+        previewText.preferredSize = Dimension(160, 160)
+        previewText.minimumSize = Dimension(160, 160)
+
+        rightPanel.add(contentPanel)
+        rightPanel.add(Box.createRigidArea(Dimension(0, 20)))
 
         table.columnModel.getColumn(0).cellRenderer = IconCellRenderer()
         table.setSelectionMode(ListSelectionModel.SINGLE_SELECTION)
@@ -157,7 +193,7 @@ class MainFrame(private val controller: Controller) : JFrame() {
         // listeners
 
         table.addMouseListener(object : MouseAdapter() {
-            override fun mouseClicked(e: MouseEvent?) = controller.handleTableClick(e)
+            override fun mouseClicked(e: MouseEvent) = controller.handleTableClick(e)
         })
         upBtn.addActionListener { controller.toPreviousLevel(model) }
         addressBar.addKeyListener(object : KeyAdapter() {
@@ -170,7 +206,34 @@ class MainFrame(private val controller: Controller) : JFrame() {
                 }
             }
         })
+    }
 
+    override fun previewText(name: String, created: ZonedDateTime, accessed: ZonedDateTime, size: Long, textPreview: String) {
+        previewNameLabel.text = name
+        previewCreatedLabel.text = created.toString()
+        previewAccessedLabel.text = accessed.toString()
+        previewSizeLabel.text = size.toString()
+        previewContentLabel.text = "Text"
+        previewText.text = textPreview
+        previewText.lineWrap = true
 
+        contentPanel.removeAll()
+        contentPanel.add(previewText)
+        rightPanel.validate()
+        rightPanel.updateUI()
+    }
+
+    override fun previewImage(name: String, created: ZonedDateTime, accessed: ZonedDateTime, size: Long, image: BufferedImage) {
+        previewNameLabel.text = name
+        previewCreatedLabel.text = created.toString()
+        previewAccessedLabel.text = accessed.toString()
+        previewSizeLabel.text = size.toString()
+        previewImageLabel.icon = ImageIcon(image)
+
+        previewContentLabel.text = "Image"
+        contentPanel.removeAll()
+        contentPanel.add(previewImageLabel)
+        rightPanel.validate()
+        rightPanel.updateUI()
     }
 }

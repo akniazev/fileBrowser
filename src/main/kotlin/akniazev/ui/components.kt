@@ -1,6 +1,7 @@
 package akniazev.ui
 
 import akniazev.common.DisplayableFile
+import akniazev.common.FileType
 import akniazev.common.SystemFile
 import com.sun.nio.zipfs.ZipPath
 import java.awt.*
@@ -8,6 +9,7 @@ import java.nio.file.Path
 import javax.swing.table.AbstractTableModel
 import java.awt.image.BufferedImage
 import java.io.File
+import java.time.ZonedDateTime
 import javax.swing.*
 import javax.swing.filechooser.FileSystemView
 import javax.swing.table.TableCellRenderer
@@ -27,7 +29,7 @@ class TableModel : AbstractTableModel() {
     override fun getValueAt(rowIndex: Int, columnIndex: Int): Any {
         val file = files[rowIndex]
         return when(columnIndex) {
-            0 -> file.extension
+            0 -> file.type
             1 -> file.name
             2 -> file.extension
             3 -> file.extension
@@ -45,10 +47,18 @@ class TableModel : AbstractTableModel() {
 class IconCellRenderer : TableCellRenderer {
     private val label = JLabel().apply { isOpaque = true; horizontalAlignment = SwingConstants.CENTER }
     private val folderIcon = ImageIcon(javaClass.getResource("/icons/folder24.png"))
+    private val textIcon = ImageIcon(javaClass.getResource("/icons/textFile.png"))
+    private val unknownIcon = ImageIcon(javaClass.getResource("/icons/unknown.png"))
 //    val view = FileSystemView.getFileSystemView()
     override fun getTableCellRendererComponent(table: JTable?, value: Any?, isSelected: Boolean,
                                                hasFocus: Boolean, row: Int, column: Int): Component {
-        label.icon = folderIcon
+        // todo enumMap?
+        label.icon = when(value) {
+            FileType.DIRECTORY -> folderIcon
+            FileType.TEXT -> textIcon
+            else -> unknownIcon
+        }
+
 //        label.icon = view.getSystemIcon(value as File) todo use as a backup maybe?
         if (isSelected) {
             label.background = table?.selectionBackground ?: label.background
@@ -72,4 +82,9 @@ class ImagePreviewRenderer(var image: BufferedImage?) : JComponent() {
             g2.drawImage(image, startX, startY, min(width, image!!.width), min(height, image!!.height), null)
         }
     }
+}
+
+interface View {
+    fun previewText(name: String, created: ZonedDateTime, accessed: ZonedDateTime, size: Long, textPreview: String)
+    fun previewImage(name: String, created: ZonedDateTime, accessed: ZonedDateTime, size: Long, image: BufferedImage)
 }
