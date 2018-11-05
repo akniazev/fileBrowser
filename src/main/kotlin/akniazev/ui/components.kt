@@ -2,25 +2,20 @@ package akniazev.ui
 
 import akniazev.common.DisplayableFile
 import akniazev.common.FileType
-import akniazev.common.SystemFile
-import com.sun.nio.zipfs.ZipPath
+import akniazev.common.Controller
 import java.awt.*
-import java.nio.file.Path
 import javax.swing.table.AbstractTableModel
-import java.awt.image.BufferedImage
-import java.io.File
-import java.time.ZonedDateTime
 import javax.swing.*
-import javax.swing.filechooser.FileSystemView
 import javax.swing.table.TableCellRenderer
-import kotlin.math.min
 
 
 class TableModel : AbstractTableModel() {
     private val columns = listOf("", "Filename", "Extension", "Last Modified")
-    var parentFile: DisplayableFile? = null
-        private set
+    private var filter: String = "All files"
+    private var cachedFiles: List<DisplayableFile> = emptyList()
     var files: List<DisplayableFile> = emptyList()
+        private set
+    var parentFile: DisplayableFile? = null
         private set
 
     override fun getRowCount() = files.size
@@ -37,10 +32,24 @@ class TableModel : AbstractTableModel() {
         }
     }
 
-    fun updateTable(newParent: DisplayableFile?, newFiles: List<DisplayableFile>) {
-        parentFile = newParent
-        files = newFiles
+    fun filterByExtension(ext: String) {
+        filter = ext
+        files = doFilter(filter, cachedFiles)
         fireTableDataChanged()
+    }
+
+    fun updateTable(newParent: DisplayableFile?, newFiles: List<DisplayableFile>) {
+        cachedFiles = newFiles
+        files = doFilter(filter, cachedFiles)
+        parentFile = newParent
+        fireTableDataChanged()
+    }
+
+    private fun doFilter(ext: String, allFiles: List<DisplayableFile>): List<DisplayableFile> {
+        return if (ext == "All files") allFiles
+               else allFiles.asSequence()
+                            .filter { it.isDirectory || it.extension == filter }
+                            .toList()
     }
 }
 
@@ -72,19 +81,79 @@ class IconCellRenderer : TableCellRenderer {
 }
 
 
-class ImagePreviewRenderer(var image: BufferedImage?) : JComponent() {
-    override fun paintComponent(g: Graphics?) {
-        if (image != null) {
-            val g2 = g as Graphics2D
-            val startX = if (width > image!!.width) (width - image!!.width) / 2 else 0
-            val startY = if (height > image!!.height) (height - image!!.height) / 2 else 0
-            g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
-            g2.drawImage(image, startX, startY, min(width, image!!.width), min(height, image!!.height), null)
+class ConnectFtpDialog(frame: Frame, title: String, controller: Controller) : JDialog(frame, title) {
+
+    private val connectBtn = JButton("Connect")
+    private val closeBtn = JButton("Close")
+
+    private val host = JTextField(20)
+    private val port = JTextField(5)
+    private val user = JTextField(20)
+    private val password = JTextField(20)
+
+
+    init {
+        size = Dimension(300, 300)
+        setLocationRelativeTo(parent)
+
+        layout = GridBagLayout()
+        val constraints = GridBagConstraints()
+
+        constraints.gridy = 0
+        constraints.weightx = 1.toDouble()
+        constraints.weighty = 1.toDouble()
+        constraints.fill = GridBagConstraints.CENTER
+
+        // First row
+        constraints.gridx = 0
+        add(JLabel("Host: "), constraints)
+        constraints.gridx++
+        host.minimumSize = textFieldDimension
+        add(host, constraints)
+
+        // Second row
+        constraints.gridy++
+        constraints.gridx = 0
+        add(JLabel("Port: "), constraints)
+        constraints.gridx++
+        port.minimumSize = textFieldDimension
+        add(port, constraints)
+
+        // Third row
+        constraints.gridy++
+        constraints.gridx = 0
+        add(JLabel("User: "), constraints)
+        constraints.gridx++
+        user.minimumSize = textFieldDimension
+        add(user, constraints)
+
+        // Fourth row
+        constraints.gridy++
+        constraints.gridx = 0
+        add(JLabel("Password: "), constraints)
+        constraints.gridx++
+        password.minimumSize = textFieldDimension
+        add(password, constraints)
+
+
+        // Last row
+        constraints.gridx = 0
+        constraints.gridy++
+        add(closeBtn, constraints)
+
+        constraints.gridx++
+        add(connectBtn, constraints)
+
+
+        connectBtn.addActionListener {
+            controller.connectToFtp(host.text, port.text, user.text, password.text)
+            isVisible = false
         }
+        closeBtn.addActionListener { isVisible = false }
+    }
+
+    companion object {
+        val textFieldDimension = Dimension(100, 20)
     }
 }
 
-interface View {
-    fun previewText(name: String, created: ZonedDateTime, accessed: ZonedDateTime, size: Long, textPreview: String)
-    fun previewImage(name: String, created: ZonedDateTime, accessed: ZonedDateTime, size: Long, image: BufferedImage)
-}
