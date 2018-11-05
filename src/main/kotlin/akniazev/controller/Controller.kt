@@ -84,12 +84,16 @@ class ControllerImpl : Controller {
         if (clickCount == 2) {
             if (file.isDirectory) {
                 navigateForwardStack.clear()
-                if (!file.isRoot) navigateBackStack.push(file)
+                if (!file.isRoot) {
+                    navigateBackStack.push(file.parent)
+                    println("Added ${file.parent?.name} to back stack")
+                }
                 navigateTo(file)
             } else if (file is SystemFile) {
                 if (file.extension == "zip") {
                     zipExit = file.parent
                     navigateBackStack.push(zipExit)
+                    println("Added ${zipExit?.name} to back stack")
                     val zipRoot = getFileSystem(file.path).getPath("/")
                     val list = Files.list(zipRoot).asSequence().map(::ZipFile).toList()
                     view.updateFileList(zipExit, list)
@@ -136,7 +140,7 @@ class ControllerImpl : Controller {
                         val image = ImageIO.read(path?.toUri()?.toURL())
                         view.previewImage(file.name, size, lastModifiedTime, getScaledImage(image))
                     } else {
-
+                        view.previewFile(file.name, size, lastModifiedTime)
                     }
                 }
                 is FtpFile -> {
@@ -150,7 +154,7 @@ class ControllerImpl : Controller {
                         val image = ImageIO.read(file.file.content.inputStream)
                         view.previewImage(file.name, size, lastModifiedTime, getScaledImage(image))
                     } else {
-
+                        view.previewFile(file.name, size, lastModifiedTime)
                     }
                 }
             }
@@ -172,6 +176,7 @@ class ControllerImpl : Controller {
     override fun navigateBack() {
         val newPath = navigateBackStack.pop()
         navigateForwardStack.push(newPath)
+        println("Going back. ${newPath.name} to forward stack")
         navigateTo(newPath)
         // todo set buttons status
     }
@@ -179,8 +184,16 @@ class ControllerImpl : Controller {
     override fun navigateForward() {
         val newPath = navigateForwardStack.pop()
         navigateBackStack.push(newPath)
+        println("Going forward. ${newPath.name} to back stack")
         navigateTo(newPath)
         // todo set buttons status
+    }
+
+    override fun navigateToRoot(path: Path) {
+        val file = SystemFile(path)
+        navigateBackStack.push(file)
+        println("Added root ${file.path} to back stack")
+        navigateTo(file)
     }
 
     override fun cleanup() {

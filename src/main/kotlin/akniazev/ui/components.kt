@@ -3,6 +3,9 @@ package akniazev.ui
 import akniazev.common.DisplayableFile
 import akniazev.common.FileType
 import akniazev.common.Controller
+import akniazev.controller.createButton
+import akniazev.controller.createLabel
+import akniazev.controller.createTextField
 import java.awt.*
 import javax.swing.table.AbstractTableModel
 import javax.swing.*
@@ -10,8 +13,8 @@ import javax.swing.table.TableCellRenderer
 
 
 class TableModel : AbstractTableModel() {
-    private val columns = listOf("", "Filename", "Extension", "Last Modified")
-    private var filter: String = "All files"
+    private val columns = listOf("", "Filename", "Extension")
+    private var filter: String = "Show all files"
     private var cachedFiles: List<DisplayableFile> = emptyList()
     var files: List<DisplayableFile> = emptyList()
         private set
@@ -27,7 +30,6 @@ class TableModel : AbstractTableModel() {
             0 -> file.type
             1 -> file.name
             2 -> file.extension
-            3 -> file.extension
             else -> throw IllegalArgumentException("Too many columns")
         }
     }
@@ -46,7 +48,7 @@ class TableModel : AbstractTableModel() {
     }
 
     private fun doFilter(ext: String, allFiles: List<DisplayableFile>): List<DisplayableFile> {
-        return if (ext == "All files") allFiles
+        return if (ext == "Show all files") allFiles
                else allFiles.asSequence()
                             .filter { it.isDirectory || it.extension == filter }
                             .toList()
@@ -56,19 +58,18 @@ class TableModel : AbstractTableModel() {
 class IconCellRenderer : TableCellRenderer {
     private val label = JLabel().apply { isOpaque = true; horizontalAlignment = SwingConstants.CENTER }
     private val folderIcon = ImageIcon(javaClass.getResource("/icons/folder24.png"))
-    private val textIcon = ImageIcon(javaClass.getResource("/icons/textFile.png"))
+    private val textIcon = ImageIcon(javaClass.getResource("/icons/text.png"))
+    private val imageIcon = ImageIcon(javaClass.getResource("/icons/image.png"))
     private val unknownIcon = ImageIcon(javaClass.getResource("/icons/unknown.png"))
-//    val view = FileSystemView.getFileSystemView()
+
     override fun getTableCellRendererComponent(table: JTable?, value: Any?, isSelected: Boolean,
                                                hasFocus: Boolean, row: Int, column: Int): Component {
-        // todo enumMap?
         label.icon = when(value) {
             FileType.DIRECTORY -> folderIcon
             FileType.TEXT -> textIcon
+            FileType.IMAGE -> imageIcon
             else -> unknownIcon
         }
-
-//        label.icon = view.getSystemIcon(value as File) todo use as a backup maybe?
         if (isSelected) {
             label.background = table?.selectionBackground ?: label.background
             label.foreground = table?.selectionForeground ?: label.foreground
@@ -83,13 +84,13 @@ class IconCellRenderer : TableCellRenderer {
 
 class ConnectFtpDialog(frame: Frame, title: String, controller: Controller) : JDialog(frame, title) {
 
-    private val connectBtn = JButton("Connect")
-    private val closeBtn = JButton("Close")
+    private val connectBtn = createButton("Connect")
+    private val closeBtn = createButton("Close")
 
-    private val host = JTextField(20)
-    private val port = JTextField(5)
-    private val user = JTextField(20)
-    private val password = JTextField(20)
+    private val host = createTextField(20)
+    private val port = createTextField(5)
+    private val user = createTextField(20)
+    private val password = createTextField(20)
 
 
     init {
@@ -106,33 +107,29 @@ class ConnectFtpDialog(frame: Frame, title: String, controller: Controller) : JD
 
         // First row
         constraints.gridx = 0
-        add(JLabel("Host: "), constraints)
+        add(createLabel("Host: "), constraints)
         constraints.gridx++
-        host.minimumSize = textFieldDimension
         add(host, constraints)
 
         // Second row
         constraints.gridy++
         constraints.gridx = 0
-        add(JLabel("Port: "), constraints)
+        add(createLabel("Port: "), constraints)
         constraints.gridx++
-        port.minimumSize = textFieldDimension
         add(port, constraints)
 
         // Third row
         constraints.gridy++
         constraints.gridx = 0
-        add(JLabel("User: "), constraints)
+        add(createLabel("User: "), constraints)
         constraints.gridx++
-        user.minimumSize = textFieldDimension
         add(user, constraints)
 
         // Fourth row
         constraints.gridy++
         constraints.gridx = 0
-        add(JLabel("Password: "), constraints)
+        add(createLabel("Password: "), constraints)
         constraints.gridx++
-        password.minimumSize = textFieldDimension
         add(password, constraints)
 
 
@@ -144,7 +141,6 @@ class ConnectFtpDialog(frame: Frame, title: String, controller: Controller) : JD
         constraints.gridx++
         add(connectBtn, constraints)
 
-
         connectBtn.addActionListener {
             controller.connectToFtp(host.text, port.text, user.text, password.text)
             isVisible = false
@@ -152,8 +148,5 @@ class ConnectFtpDialog(frame: Frame, title: String, controller: Controller) : JD
         closeBtn.addActionListener { isVisible = false }
     }
 
-    companion object {
-        val textFieldDimension = Dimension(100, 20)
-    }
 }
 

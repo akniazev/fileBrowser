@@ -10,6 +10,7 @@ interface View {
     fun updateFileList(parent: DisplayableFile?, files: List<DisplayableFile>)
     fun previewText(name: String, size: Long, lastModified: ZonedDateTime, textPreview: String)
     fun previewImage(name: String, size: Long, lastModified: ZonedDateTime, image: BufferedImage)
+    fun previewFile(name: String, size: Long, lastModified: ZonedDateTime)
 }
 
 interface Controller {
@@ -17,6 +18,7 @@ interface Controller {
     fun handleTableClick(clickCount: Int, file: DisplayableFile)
     fun connectToFtp(host: String, port: String, user: String, pass: String)
     fun navigateTo(file: DisplayableFile)
+    fun navigateToRoot(path: Path)
     fun tryNavigate(pathText: String): String
     fun navigateBack()
     fun navigateForward()
