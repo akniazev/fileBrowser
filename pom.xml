@@ -5,7 +5,7 @@
 
     <groupId>akniazev</groupId>
     <artifactId>fileBrowser</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <version>1.0</version>
     <packaging>jar</packaging>
 
     <name>fileBrowser</name>
@@ -18,6 +18,8 @@
         <junit.version>4.12</junit.version>
         <commons-net.version>3.6</commons-net.version>
         <commons-vfs2.version>2.1</commons-vfs2.version>
+        <mockito-version>2.23.0</mockito-version>
+        <mock-ftp-server-version>2.7.1</mock-ftp-server-version>
     </properties>
 
     <dependencies>
@@ -41,6 +43,11 @@
             <artifactId>commons-vfs2</artifactId>
             <version>${commons-vfs2.version}</version>
         </dependency>
+        <dependency>
+            <groupId>org.apache.tika</groupId>
+            <artifactId>tika-core</artifactId>
+            <version>1.19.1</version>
+        </dependency>
 
         <!--testing dependencies-->
         <dependency>
@@ -58,15 +65,20 @@
         <dependency>
             <groupId>org.mockftpserver</groupId>
             <artifactId>MockFtpServer</artifactId>
-            <version>2.7.1</version>
-            <!--<scope>test</scope>-->
+            <version>${mock-ftp-server-version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <version>${mockito-version}</version>
+            <scope>test</scope>
         </dependency>
     </dependencies>
 
     <build>
         <sourceDirectory>src/main/kotlin</sourceDirectory>
         <testSourceDirectory>src/test/kotlin</testSourceDirectory>
-
         <plugins>
             <plugin>
                 <groupId>org.jetbrains.kotlin</groupId>

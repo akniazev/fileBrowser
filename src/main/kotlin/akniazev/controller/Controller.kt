@@ -1,14 +1,11 @@
 package akniazev.controller
 
 import akniazev.common.*
-import akniazev.ui.TableModel
 import akniazev.common.View
 import org.apache.commons.vfs2.FileSystemOptions
 import org.apache.commons.vfs2.VFS
 import org.apache.commons.vfs2.provider.ftp.FtpFileSystemConfigBuilder
 import java.awt.Desktop
-import java.awt.event.MouseEvent
-import java.awt.image.BufferedImage
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.URI
@@ -17,66 +14,71 @@ import java.nio.file.*
 import java.nio.file.attribute.BasicFileAttributeView
 import java.time.Instant
 import java.time.ZoneId
-import java.time.ZonedDateTime
 import java.util.*
 import javax.imageio.ImageIO
-import javax.swing.JTable
 import kotlin.streams.asSequence
 
 typealias FtpFS = org.apache.commons.vfs2.FileSystem
-typealias FileInfo = Pair<Long, ZonedDateTime>
-
 
 class ControllerImpl : Controller {
 
-    private val desktop: Desktop?
+    override lateinit var view: View
     private var zipExit: SystemFile? = null
     private var ftpConnected: Boolean = false
     private var ftpFileSystem: FtpFS? = null
-    private val navigateBackStack: Deque<DisplayableFile> = LinkedList()
-    private val navigateForwardStack: Deque<DisplayableFile> = LinkedList()
+    private val navigateBackStack: Deque<DisplayableFile> = EvictingStack(10)
+    private val navigateForwardStack: Deque<DisplayableFile> = EvictingStack(10)
     private val buffer: CharBuffer = CharBuffer.allocate(150)
-    override lateinit var view: View
-
-
-    init {
-        desktop = if (Desktop.isDesktopSupported()
-                      && Desktop.getDesktop().isSupported(Desktop.Action.OPEN)) Desktop.getDesktop()
-                  else null
-    }
+    private var currentFile: DisplayableFile? = null
+    private val desktop: Desktop? = if (Desktop.isDesktopSupported()
+            && Desktop.getDesktop().isSupported(Desktop.Action.OPEN)) Desktop.getDesktop() else null
 
 
     override fun navigateTo(file: DisplayableFile) {
+        currentFile = file
         when(file) {
-            is FtpFile -> {
-                val list = file.file.children.asSequence().map(::FtpFile).toList()
-                view.updateFileList(file.parent, list)
-            }
             is SystemFile -> {
-                if (Files.isDirectory(file.path)) {
-                    view.updateFileList(file.parent, Files.list(file.path).asSequence().map(::SystemFile).toList())
-                } else {
-                    val directoryPath = file.parent!!
-                    view.updateFileList(directoryPath.parent, Files.list(directoryPath.path).asSequence().map(::SystemFile).toList())
-                    // todo set selection
-                }
+                view.updateFileList(file.parent, Files.list(file.path).asSequence().map(::SystemFile).toList())
+
+                view.updateAddress(file.path.toString(), true)
+                view.updateNavigation(navigateBackStack.isNotEmpty(), navigateForwardStack.isNotEmpty(), !file.isRoot)
             }
             is ZipFile -> {
                 val parent = if (file.isRoot) zipExit else file.parent
                 val list = Files.list(file.file).asSequence().map(::ZipFile).toList()
                 view.updateFileList(parent, list)
+
+                view.updateAddress(file.file.toString(), false)
+                view.updateNavigation(navigateBackStack.isNotEmpty(), navigateForwardStack.isNotEmpty(), true)
+            }
+            is FtpFile -> {
+                val list = file.file.children.asSequence().map(::FtpFile).toList()
+                view.updateFileList(file.parent, list)
+
+                view.updateAddress(file.file.publicURIString, false)
+                view.updateNavigation(navigateBackStack.isNotEmpty(), navigateForwardStack.isNotEmpty(), !file.isRoot)
             }
         }
     }
 
     override fun connectToFtp(host: String, port: String, user: String, pass: String) {
-        val url = "ftp://$user:$pass@$host:$port/"
+        val builder = StringBuilder("ftp://")
+        if (user != "") {
+            builder.append(user)
+            if(pass != "") builder.append(":$pass")
+            builder.append('@')
+        }
+        builder.append(host)
+        if (port != "") builder.append(":$port/")
+
+        val url = builder.toString()
         val opts = FileSystemOptions()
         FtpFileSystemConfigBuilder.getInstance().setPassiveMode(opts, true)
         val file = VFS.getManager().resolveFile(url, opts)
         ftpConnected = true
         ftpFileSystem = file.fileSystem
         navigateTo(FtpFile(file))
+        view.ftpConnected()
     }
 
     override fun handleTableClick(clickCount: Int, file: DisplayableFile) {
@@ -85,54 +87,32 @@ class ControllerImpl : Controller {
             if (file.isDirectory) {
                 navigateForwardStack.clear()
                 if (!file.isRoot) {
-                    navigateBackStack.push(file.parent)
-                    println("Added ${file.parent?.name} to back stack")
+                    if (currentFile != null) navigateBackStack.push(currentFile)
                 }
                 navigateTo(file)
             } else if (file is SystemFile) {
                 if (file.extension == "zip") {
                     zipExit = file.parent
                     navigateBackStack.push(zipExit)
-                    println("Added ${zipExit?.name} to back stack")
                     val zipRoot = getFileSystem(file.path).getPath("/")
                     val list = Files.list(zipRoot).asSequence().map(::ZipFile).toList()
                     view.updateFileList(zipExit, list)
+
+                    view.updateAddress("/", false)
+                    view.updateNavigation(navigateBackStack.isNotEmpty(), navigateForwardStack.isNotEmpty(), true)
+
                 } else {
                     desktop?.open(file.path.toFile())
                 }
             }
         } else if (clickCount == 1) {
-//            val (size, lastModifiedTime) = when(file) {
-//                is SystemFile, is ZipFile -> {
-//                    val path = (file as? SystemFile)?.path ?: (file as? ZipFile)?.file
-//                    val attrs = Files.getFileAttributeView(path, BasicFileAttributeView::class.java).readAttributes()
-//                    val lastModifiedTime = attrs.lastModifiedTime().toSystemDateTime()
-//                    val size = attrs.size()
-//                    FileInfo(size, lastModifiedTime)
-//                }
-//                is FtpFile -> {
-//                    val content = file.file.content
-//                    val size = content.size
-//                    val lastModifiedTime = Instant.ofEpochMilli(content.lastModifiedTime).atZone(ZoneId.systemDefault())
-//                    FileInfo(size, lastModifiedTime)
-//                }
-//                else -> throw IllegalArgumentException()
-//            }
-
-//            if (type == FileType.TEXT) {
-//                val content = when(file) {
-//                    is SystemFile, is ZipFile -> readContent(Files.newBufferedReader(path))
-//                    is FtpFile -> readContent(BufferedReader(InputStreamReader(file.file.content.inputStream)))
-//                }
-//
-//            }
-
             when (file) {
                 is SystemFile, is ZipFile -> {
                     val path = (file as? SystemFile)?.path ?: (file as? ZipFile)?.file
                     val attrs = Files.getFileAttributeView(path, BasicFileAttributeView::class.java).readAttributes()
-                    val lastModifiedTime = attrs.lastModifiedTime().toSystemDateTime()
+                    val lastModifiedTime = attrs.lastModifiedTime().toInstant().atZone(ZoneId.systemDefault())
                     val size = attrs.size()
+
                     if (type == FileType.TEXT) {
                         val result = readContent(Files.newBufferedReader(path))
                         view.previewText(file.name, size, lastModifiedTime, result)
@@ -145,8 +125,9 @@ class ControllerImpl : Controller {
                 }
                 is FtpFile -> {
                     val content = file.file.content
-                    val size = content.size
+                    val size = if (file.isDirectory) 0 else content.size
                     val lastModifiedTime = Instant.ofEpochMilli(content.lastModifiedTime).atZone(ZoneId.systemDefault())
+
                     if (type == FileType.TEXT) {
                         val result = readContent(BufferedReader(InputStreamReader(file.file.content.inputStream)))
                         view.previewText(file.name, size, lastModifiedTime, result)
@@ -162,44 +143,48 @@ class ControllerImpl : Controller {
     }
 
     override fun tryNavigate(pathText: String): String {
-        val normalized = pathText.replace('\\', '/')    // todo ftp
+        val normalized = pathText.replace('\\', '/')
         val path = Paths.get(normalized)
-        if (Files.exists(path)) {
+        if (Files.exists(path) && Files.isDirectory(path)) {
             val file = SystemFile(path)
             navigateBackStack.push(file)
             navigateForwardStack.clear()
             navigateTo(file)
-        } else throw IllegalArgumentException("Incorrect path")
+        } else throw IncorrectPathException()
         return normalized
     }
 
     override fun navigateBack() {
         val newPath = navigateBackStack.pop()
-        navigateForwardStack.push(newPath)
-        println("Going back. ${newPath.name} to forward stack")
+
+        navigateForwardStack.push(currentFile)
         navigateTo(newPath)
-        // todo set buttons status
     }
 
     override fun navigateForward() {
         val newPath = navigateForwardStack.pop()
-        navigateBackStack.push(newPath)
-        println("Going forward. ${newPath.name} to back stack")
+        navigateBackStack.push(currentFile)
         navigateTo(newPath)
-        // todo set buttons status
     }
 
     override fun navigateToRoot(path: Path) {
         val file = SystemFile(path)
-        navigateBackStack.push(file)
-        println("Added root ${file.path} to back stack")
+        if (currentFile != null) navigateBackStack.push(currentFile)
         navigateTo(file)
+    }
+
+    override fun disconnectFtp() {
+        if (ftpConnected) {
+            VFS.getManager().closeFileSystem(ftpFileSystem)
+            ftpConnected = false
+        }
+        view.ftpDisconnected()
     }
 
     override fun cleanup() {
         if (ftpConnected) {
             VFS.getManager().closeFileSystem(ftpFileSystem)
-            println("ftp fs closed")
+            ftpConnected = false
         }
     }
 
@@ -215,6 +200,6 @@ class ControllerImpl : Controller {
     private fun readContent(br: BufferedReader) = br.use { reader ->
         val read = reader.read(buffer)
         buffer.rewind()
-        buffer.substring(0, read)
+        if (read > 0) buffer.substring(0, read) else ""
     }
 }

@@ -3,6 +3,7 @@ package akniazev.ui
 import akniazev.common.*
 import akniazev.controller.createButton
 import akniazev.controller.createLabel
+import akniazev.controller.notifyOnError
 import java.awt.*
 import java.awt.event.*
 import java.awt.image.BufferedImage
@@ -23,7 +24,7 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
     private val table = JTable(model)
     private val tableScroll = JScrollPane(table)
 
-    private val extensionFilter = JComboBox<String>(arrayOf("Show all files", "txt", "png", "js", "json")).apply { font = REGULAR_FONT }
+    private val extensionFilter = JComboBox<String>(DEFAULT_EXTENSIONS).apply { font = REGULAR_FONT }
     private val connectFtpBtn = createButton("FTP")
 
     private val backBtn = createButton("Back")
@@ -42,6 +43,9 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
 
     private val connectFtpDialog = ConnectFtpDialog(this, "Connect FTP", controller)
     private var detailsPanelBuilt = false
+
+    private val connectFtpListener = ActionListener { connectFtpDialog.isVisible = true }
+    private val disconnectFtpListener = ActionListener { controller.disconnectFtp() }
 
     init {
         controller.view = this
@@ -69,24 +73,37 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
         add(rightPanel, BorderLayout.EAST)
 
         attachListeners()
-        controller.navigateTo(SystemFile(FileSystems.getDefault().rootDirectories.asSequence().first()))
+        controller.navigateTo(SystemFile(firstRoot()))
     }
 
     private fun attachListeners() {
-        backBtn.addActionListener { controller.navigateBack() }
-        forwardBtn.addActionListener { controller.navigateForward() }
-        upBtn.addActionListener { controller.navigateTo(model.parentFile!!) }
-        connectFtpBtn.addActionListener { connectFtpDialog.isVisible = true }
+        backBtn.addActionListener {
+            notifyOnError(this) {
+                controller.navigateBack()
+            }
+        }
+        forwardBtn.addActionListener {
+            notifyOnError(this) {
+                controller.navigateForward()
+            }
+        }
+        upBtn.addActionListener {
+            notifyOnError(this) {
+                controller.navigateTo(model.parentFile!!)
+            }
+        }
+        connectFtpBtn.addActionListener(connectFtpListener)
 
         table.addMouseListener(object : MouseAdapter() {
-            override fun mouseClicked(e: MouseEvent) = controller.handleTableClick(e.clickCount, model.files[table.selectedRow])
+            override fun mouseClicked(e: MouseEvent) = notifyOnError(this@MainFrame) {
+                controller.handleTableClick(e.clickCount, model.files[table.selectedRow])
+            }
         })
 
         addressBar.addKeyListener(object : KeyAdapter() {
-            override fun keyReleased(e: KeyEvent?) {
+            override fun keyReleased(e: KeyEvent?) =  notifyOnError(this@MainFrame) {
                 if (e?.keyCode == KeyEvent.VK_ENTER) {
-                    val normalizedPath = controller.tryNavigate(addressBar.text)
-                    addressBar.text = normalizedPath
+                    controller.tryNavigate(addressBar.text)
                 }
             }
         })
@@ -110,8 +127,7 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
 
         image.border = BorderFactory.createEmptyBorder(0, 0, 30, 0)
         leftPanel.add(image)
-        leftPanel.add(createLabel("Filter files"))
-        leftPanel.add(Box.createRigidArea(Dimension(0, 10)))
+        leftPanel.add(Box.createRigidArea(Dimension(0, 40)))
 
         extensionFilter.isEditable = true
         extensionFilter.alignmentX = Component.LEFT_ALIGNMENT
@@ -119,18 +135,13 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
         extensionFilter.maximumSize = Dimension(130, 30)
 
         leftPanel.add(extensionFilter)
-        leftPanel.add(Box.createRigidArea(Dimension(0, 20)))
-
-
-        leftPanel.add(createLabel("Quick access"))
-        leftPanel.add(Box.createRigidArea(Dimension(0, 10)))
-
+        leftPanel.add(Box.createRigidArea(Dimension(0, 40)))
 
         FileSystems.getDefault().rootDirectories.asSequence().forEach { path ->
             val button = createButton(path.toString())
-            button.addActionListener { controller.navigateToRoot(path) }
+            button.addActionListener { notifyOnError(this@MainFrame) { controller.navigateToRoot(path) } }
             leftPanel.add(button)
-            leftPanel.add(Box.createRigidArea(Dimension(0, 10)))
+            leftPanel.add(Box.createRigidArea(SMALL_VERTICAL_GAP))
         }
 
         connectFtpBtn.maximumSize = Dimension(130, 30)
@@ -152,35 +163,36 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
         rightPanel.add(Box.createRigidArea(Dimension(0, 45)))
 
         rightPanel.add(createLabel("Name"))
-        rightPanel.add(Box.createRigidArea(Dimension(0, 10)))
+        rightPanel.add(Box.createRigidArea(SMALL_VERTICAL_GAP))
         rightPanel.add(previewNameLabel)
         rightPanel.add(Box.createRigidArea(Dimension(0, 20)))
 
         rightPanel.add(createLabel("Size"))
-        rightPanel.add(Box.createRigidArea(Dimension(0, 10)))
+        rightPanel.add(Box.createRigidArea(SMALL_VERTICAL_GAP))
         rightPanel.add(previewSizeLabel)
         rightPanel.add(Box.createRigidArea(Dimension(0, 20)))
 
         rightPanel.add(createLabel("Last modified"))
-        rightPanel.add(Box.createRigidArea(Dimension(0, 10)))
+        rightPanel.add(Box.createRigidArea(SMALL_VERTICAL_GAP))
         rightPanel.add(previewModifiedLabel)
         rightPanel.add(Box.createRigidArea(Dimension(0, 20)))
 
         rightPanel.add(previewContentLabel)
-        rightPanel.add(Box.createRigidArea(Dimension(0, 10)))
+        rightPanel.add(Box.createRigidArea(SMALL_VERTICAL_GAP))
 
-        contentPanel.preferredSize = Dimension(200, 230)
-        contentPanel.minimumSize = Dimension(200, 230)
-        contentPanel.maximumSize = Dimension(200, 230)
+        val contentPanelSize = Dimension(200, 230)
+        contentPanel.preferredSize = contentPanelSize
+        contentPanel.minimumSize = contentPanelSize
+        contentPanel.maximumSize = contentPanelSize
         contentPanel.alignmentX = Component.LEFT_ALIGNMENT
         contentPanel.layout = BorderLayout(0, 0)
         contentPanel.background = rightPanel.background
 
-        previewImageLabel.preferredSize = Dimension(200, 200)
-        previewImageLabel.minimumSize = Dimension(200, 200)
+        previewImageLabel.preferredSize = contentPanelSize
+        previewImageLabel.minimumSize = contentPanelSize
 
-        previewText.preferredSize = Dimension(200, 230)
-        previewText.minimumSize = Dimension(200, 230)
+        previewText.preferredSize = contentPanelSize
+        previewText.minimumSize = contentPanelSize
         previewText.rows = 10
         previewText.background = rightPanel.background
         previewText.isEditable = false
@@ -242,14 +254,14 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
         model.updateTable(parent, files)
     }
 
-    override fun previewText(name: String, size: Long, lastModified: ZonedDateTime, textPreview: String) {
+    override fun previewText(name: String, size: Long, lastModified: ZonedDateTime?, textPreview: String) {
         if (!detailsPanelBuilt) {
             buildRightPanel()
             detailsPanelBuilt = true
         }
         previewNameLabel.text = name
         previewSizeLabel.text = size.toString() + " bytes"
-        previewModifiedLabel.text = lastModified.format(DateTimeFormatter.ISO_DATE)
+        previewModifiedLabel.text = lastModified?.format(DateTimeFormatter.ISO_DATE)
 
         previewContentLabel.text = "Text"
         previewText.text = textPreview
@@ -261,14 +273,14 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
         rightPanel.updateUI()
     }
 
-    override fun previewImage(name: String, size: Long, lastModified: ZonedDateTime, image: BufferedImage) {
+    override fun previewImage(name: String, size: Long, lastModified: ZonedDateTime?, image: BufferedImage) {
         if (!detailsPanelBuilt) {
             buildRightPanel()
             detailsPanelBuilt = true
         }
         previewNameLabel.text = name
         previewSizeLabel.text = size.toString() + " bytes"
-        previewModifiedLabel.text = lastModified.format(DateTimeFormatter.ISO_DATE)
+        previewModifiedLabel.text = lastModified?.format(DateTimeFormatter.ISO_DATE)
 
         previewContentLabel.text = "Image"
         previewImageLabel.icon = ImageIcon(image)
@@ -279,18 +291,47 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
         rightPanel.updateUI()
     }
 
-    override fun previewFile(name: String, size: Long, lastModified: ZonedDateTime) {
+    override fun previewFile(name: String, size: Long, lastModified: ZonedDateTime?) {
         if (!detailsPanelBuilt) {
             buildRightPanel()
             detailsPanelBuilt = true
         }
         previewNameLabel.text = name
         previewSizeLabel.text = size.toString() + " bytes"
-        previewModifiedLabel.text = lastModified.format(DateTimeFormatter.ISO_DATE)
+        previewModifiedLabel.text = lastModified?.format(DateTimeFormatter.ISO_DATE)
 
         previewContentLabel.text = ""
         contentPanel.removeAll()
         rightPanel.validate()
         rightPanel.updateUI()
     }
+
+    override fun updateAddress(newAddress: String, enabled: Boolean) {
+        addressBar.text = newAddress
+        addressBar.isEnabled = enabled
+    }
+
+    override fun updateNavigation(backPossible: Boolean, forwardPossible: Boolean, upPossible: Boolean) {
+        backBtn.isEnabled = backPossible
+        forwardBtn.isEnabled = forwardPossible
+        upBtn.isEnabled = upPossible
+        rightPanel.updateUI()
+    }
+
+    override fun ftpConnected() {
+        connectFtpBtn.text = "Disconnect"
+        connectFtpBtn.removeActionListener(connectFtpListener)
+        connectFtpBtn.addActionListener(disconnectFtpListener)
+        connectFtpBtn.updateUI()
+    }
+
+    override fun ftpDisconnected() {
+        connectFtpBtn.text = "FTP"
+        connectFtpBtn.removeActionListener(disconnectFtpListener)
+        connectFtpBtn.addActionListener(connectFtpListener)
+        connectFtpBtn.updateUI()
+        controller.navigateTo(SystemFile(firstRoot()))
+    }
+
+    private fun firstRoot() = FileSystems.getDefault().rootDirectories.asSequence().first()
 }
