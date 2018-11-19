@@ -32,6 +32,8 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
     private val upBtn = createButton("Up")
     private val addressBar = JTextField()
 
+    private val progressDialog = JDialog(this, "Loading", false)
+
 
     private val previewNameLabel = JLabel().apply { font = Font("Arial", Font.BOLD, 16) }
     private val previewModifiedLabel = JLabel().apply { font = Font("Arial", Font.BOLD, 16) }
@@ -55,6 +57,7 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
         minimumSize = Dimension(1100, 600)
         defaultCloseOperation = WindowConstants.DO_NOTHING_ON_CLOSE
         isVisible = true
+        setLocationRelativeTo(null)
         addWindowListener(object : WindowAdapter() {
             override fun windowClosing(e: WindowEvent?) {
                 controller.cleanup()
@@ -74,6 +77,11 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
 
         attachListeners()
         controller.navigateTo(SystemFile(firstRoot()))
+
+
+        progressDialog.setLocationRelativeTo(this)
+        progressDialog.size = Dimension(200, 50)
+        progressDialog.isAlwaysOnTop = true
     }
 
     private fun attachListeners() {
@@ -93,12 +101,65 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
             }
         }
         connectFtpBtn.addActionListener(connectFtpListener)
-
+        table.autoCreateRowSorter = true
         table.addMouseListener(object : MouseAdapter() {
             override fun mouseClicked(e: MouseEvent) = notifyOnError(this@MainFrame) {
-                controller.handleTableClick(e.clickCount, model.files[table.selectedRow])
+                if (e.clickCount == 2) progressDialog.isVisible = true
+                println("on view: ${table.selectedRow}. actual: ${table.convertRowIndexToModel(table.selectedRow)}")
+                println("name ${model.files[table.convertRowIndexToModel(table.selectedRow)].name}")
+                controller.handleTableClick(e.clickCount, model.files[table.convertRowIndexToModel(table.selectedRow)])
             }
         })
+
+        table.getInputMap(JComponent.WHEN_ANCESTOR_OF_FOCUSED_COMPONENT).apply {
+            put(KeyStroke.getKeyStroke("pressed ENTER"), "handleSelection")
+            put(KeyStroke.getKeyStroke("alt pressed UP"), "navigateUp")
+            put(KeyStroke.getKeyStroke("alt pressed RIGHT"), "navigateForward")
+            put(KeyStroke.getKeyStroke("alt pressed LEFT"), "navigateBack")
+            put(KeyStroke.getKeyStroke("pressed BACK_SPACE"), "navigateBack")
+        }
+        table.actionMap.apply {
+            put("handleSelection", object : AbstractAction() {
+                override fun actionPerformed(e: ActionEvent) {
+                    controller.handleTableClick(2, model.files[table.convertRowIndexToModel(table.selectedRow)])
+                }
+            })
+            put("navigateUp", object : AbstractAction() {
+                override fun actionPerformed(e: ActionEvent) {
+                    if (upBtn.isEnabled) {
+                        controller.navigateTo(model.parentFile!!)
+                    }
+                }
+            })
+            put("navigateBack", object : AbstractAction() {
+                override fun actionPerformed(e: ActionEvent) {
+                    if (backBtn.isEnabled) {
+                        controller.navigateBack()
+                    }
+                }
+            })
+            put("navigateForward", object : AbstractAction() {
+                override fun actionPerformed(e: ActionEvent) {
+                    if (forwardBtn.isEnabled) {
+                        controller.navigateForward()
+                    }
+                }
+            })
+            val nextRowAction = get("selectNextRow")
+            put("selectNextRow", object : AbstractAction() {
+                override fun actionPerformed(e: ActionEvent?) {
+                    nextRowAction.actionPerformed(e)
+                    controller.handleTableClick(1, model.files[table.convertRowIndexToModel(table.selectedRow)])
+                }
+            })
+            val previousRowAction = get("selectPreviousRow")
+            put("selectPreviousRow", object : AbstractAction() {
+                override fun actionPerformed(e: ActionEvent?) {
+                    previousRowAction.actionPerformed(e)
+                    controller.handleTableClick(1, model.files[table.convertRowIndexToModel(table.selectedRow)])
+                }
+            })
+        }
 
         addressBar.addKeyListener(object : KeyAdapter() {
             override fun keyReleased(e: KeyEvent?) =  notifyOnError(this@MainFrame) {
@@ -252,6 +313,7 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
 
     override fun updateFileList(parent: DisplayableFile?, files: List<DisplayableFile>) {
         model.updateTable(parent, files)
+        progressDialog.isVisible = false
     }
 
     override fun previewText(name: String, size: Long, lastModified: ZonedDateTime?, textPreview: String) {

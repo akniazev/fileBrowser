@@ -10,10 +10,7 @@ import java.lang.Exception
 import java.nio.file.Files
 import java.security.PrivilegedActionException
 import java.util.*
-import javax.swing.JButton
-import javax.swing.JLabel
-import javax.swing.JOptionPane
-import javax.swing.JTextField
+import javax.swing.*
 
 object FileTypeDetector {
     private val tika = Tika()
@@ -22,7 +19,7 @@ object FileTypeDetector {
 
     fun detect(file: DisplayableFile): FileType {
         if (file.isDirectory) return FileType.DIRECTORY
-        if (image.contains(file.extension)) return FileType.IMAGE
+        if (image.contains(file.extension.toLowerCase())) return FileType.IMAGE
         return when(file) {
             is SystemFile, is ZipFile -> {
                 val path = (file as? SystemFile)?.path ?: (file as? ZipFile)?.file

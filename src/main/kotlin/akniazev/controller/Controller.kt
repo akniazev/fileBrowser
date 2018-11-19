@@ -12,10 +12,12 @@ import java.net.URI
 import java.nio.CharBuffer
 import java.nio.file.*
 import java.nio.file.attribute.BasicFileAttributeView
+import java.nio.file.attribute.BasicFileAttributes
 import java.time.Instant
 import java.time.ZoneId
 import java.util.*
 import javax.imageio.ImageIO
+import javax.swing.SwingWorker
 import kotlin.streams.asSequence
 
 typealias FtpFS = org.apache.commons.vfs2.FileSystem
@@ -34,19 +36,52 @@ class ControllerImpl : Controller {
             && Desktop.getDesktop().isSupported(Desktop.Action.OPEN)) Desktop.getDesktop() else null
 
 
+    fun listChildren(file: DisplayableFile) = when(file) {
+        is SystemFile -> {
+            val resultList = mutableListOf<DisplayableFile>()
+            Files.walkFileTree(file.path, emptySet(), 1, SystemFileVisitor(resultList))
+            resultList
+        }
+        is ZipFile -> {
+            val resultList = mutableListOf<DisplayableFile>()
+            Files.walkFileTree(file.file, emptySet(), 1, ZipFileVisitor(resultList))
+            resultList
+        }
+        is FtpFile -> file.file.children.asSequence().map { println(it.name); FtpFile(it) }.toList()
+        else -> throw IllegalArgumentException()
+    }
+
+    fun navigateTo(file: DisplayableFile, children: List<DisplayableFile>) {
+        currentFile = file
+        val (parent, path) = when(file) {
+            is SystemFile -> Pair(file.parent, file.path.toString())
+            is ZipFile -> Pair(if (file.isRoot) zipExit else file.parent, file.file.toString())
+            is FtpFile -> Pair(file.parent, file.file.publicURIString)
+            else -> throw IllegalArgumentException()
+        }
+        view.updateFileList(parent, children)
+        view.updateAddress(path, file !is ZipFile)
+        view.updateNavigation(navigateBackStack.isNotEmpty(),
+                              navigateForwardStack.isNotEmpty(),
+                              file is ZipFile || !file.isRoot)
+    }
+
     override fun navigateTo(file: DisplayableFile) {
         currentFile = file
         when(file) {
             is SystemFile -> {
-                view.updateFileList(file.parent, Files.list(file.path).asSequence().map(::SystemFile).toList())
+                val resultList = mutableListOf<DisplayableFile>()
+                Files.walkFileTree(file.path, emptySet(), 1, SystemFileVisitor(resultList))
+                view.updateFileList(file.parent, resultList)
 
                 view.updateAddress(file.path.toString(), true)
                 view.updateNavigation(navigateBackStack.isNotEmpty(), navigateForwardStack.isNotEmpty(), !file.isRoot)
             }
             is ZipFile -> {
                 val parent = if (file.isRoot) zipExit else file.parent
-                val list = Files.list(file.file).asSequence().map(::ZipFile).toList()
-                view.updateFileList(parent, list)
+                val resultList = mutableListOf<DisplayableFile>()
+                Files.walkFileTree(file.file, emptySet(), 1, ZipFileVisitor(resultList))
+                view.updateFileList(parent, resultList)
 
                 view.updateAddress(file.file.toString(), false)
                 view.updateNavigation(navigateBackStack.isNotEmpty(), navigateForwardStack.isNotEmpty(), true)
@@ -89,14 +124,22 @@ class ControllerImpl : Controller {
                 if (!file.isRoot) {
                     if (currentFile != null) navigateBackStack.push(currentFile)
                 }
-                navigateTo(file)
+                object : SwingWorker<List<DisplayableFile>, Int>() {
+                    override fun doInBackground(): List<DisplayableFile> {
+                        return listChildren(file)
+                    }
+                    override fun done() {
+                        navigateTo(file, get())
+                    }
+                }.execute()
             } else if (file is SystemFile) {
                 if (file.extension == "zip") {
                     zipExit = file.parent
                     navigateBackStack.push(zipExit)
                     val zipRoot = getFileSystem(file.path).getPath("/")
-                    val list = Files.list(zipRoot).asSequence().map(::ZipFile).toList()
-                    view.updateFileList(zipExit, list)
+                    val resultList = mutableListOf<DisplayableFile>()
+                    Files.walkFileTree(zipRoot, emptySet(), 1, ZipFileVisitor(resultList))
+                    view.updateFileList(zipExit, resultList)
 
                     view.updateAddress("/", false)
                     view.updateNavigation(navigateBackStack.isNotEmpty(), navigateForwardStack.isNotEmpty(), true)
@@ -109,33 +152,25 @@ class ControllerImpl : Controller {
             when (file) {
                 is SystemFile, is ZipFile -> {
                     val path = (file as? SystemFile)?.path ?: (file as? ZipFile)?.file
-                    val attrs = Files.getFileAttributeView(path, BasicFileAttributeView::class.java).readAttributes()
-                    val lastModifiedTime = attrs.lastModifiedTime().toInstant().atZone(ZoneId.systemDefault())
-                    val size = attrs.size()
-
                     if (type == FileType.TEXT) {
                         val result = readContent(Files.newBufferedReader(path))
-                        view.previewText(file.name, size, lastModifiedTime, result)
+                        view.previewText(file.name, file.size, file.lastModified, result)
                     } else if (type == FileType.IMAGE) {
                         val image = ImageIO.read(path?.toUri()?.toURL())
-                        view.previewImage(file.name, size, lastModifiedTime, getScaledImage(image))
+                        view.previewImage(file.name, file.size, file.lastModified, getScaledImage(image))
                     } else {
-                        view.previewFile(file.name, size, lastModifiedTime)
+                        view.previewFile(file.name, file.size, file.lastModified)
                     }
                 }
                 is FtpFile -> {
-                    val content = file.file.content
-                    val size = if (file.isDirectory) 0 else content.size
-                    val lastModifiedTime = Instant.ofEpochMilli(content.lastModifiedTime).atZone(ZoneId.systemDefault())
-
                     if (type == FileType.TEXT) {
                         val result = readContent(BufferedReader(InputStreamReader(file.file.content.inputStream)))
-                        view.previewText(file.name, size, lastModifiedTime, result)
+                        view.previewText(file.name, file.size, file.lastModified, result)
                     } else if (type == FileType.IMAGE) {
                         val image = ImageIO.read(file.file.content.inputStream)
-                        view.previewImage(file.name, size, lastModifiedTime, getScaledImage(image))
+                        view.previewImage(file.name, file.size, file.lastModified, getScaledImage(image))
                     } else {
-                        view.previewFile(file.name, size, lastModifiedTime)
+                        view.previewFile(file.name, file.size, file.lastModified)
                     }
                 }
             }
