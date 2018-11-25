@@ -6,6 +6,7 @@ import org.apache.commons.vfs2.FileSystemOptions
 import org.apache.commons.vfs2.VFS
 import org.apache.commons.vfs2.provider.ftp.FtpFileSystemConfigBuilder
 import org.junit.AfterClass
+import org.junit.Before
 import org.junit.BeforeClass
 import org.junit.Test
 import org.mockftpserver.fake.FakeFtpServer
@@ -25,16 +26,18 @@ import kotlin.test.*
 
 class ControllerTest {
 
+    private var controller: Controller = ControllerImpl()
+
     @Test fun testTableNavigation() {
         val view = Mockito.mock(View::class.java)
         Mockito.`when`(view.updateFileList(any(DisplayableFile::class.java), anyList())).thenAnswer { invocation ->
             val parent: DisplayableFile? = invocation.getArgument(0)
             assertNotNull(parent)
             assertTrue(parent is SystemFile)
-            assertEquals(Paths.get(tempDir), (parent as SystemFile).path)
+            assertEquals(Paths.get(tempDir), parent.path)
 
             val result: List<DisplayableFile> = invocation.getArgument(1)
-            assertTrue(result.size == 1)
+            assertEquals(1, result.size)
             assertEquals("test.txt", result[0].name)
         }
         Mockito.`when`(view.updateAddress(anyString(), anyBoolean())).thenAnswer { invocation ->
@@ -42,19 +45,19 @@ class ControllerTest {
             assertEquals(address, dirPath.toString())
         }
         controller.view = view
-        controller.handleTableClick(2, SystemFile(dirPath))
+        controller.navigate(SystemFile(dirPath))
     }
 
     @Test fun testContent() {
         val view = Mockito.mock(View::class.java)
-        Mockito.`when`(view.previewText(anyString(), anyLong(), any(ZonedDateTime::class.java), anyString())).thenAnswer { invocation ->
-            val text: String? = invocation.getArgument(3)
+        Mockito.`when`(view.previewText(anyString())).thenAnswer { invocation ->
+            val text: String? = invocation.getArgument(0)
             assertNotNull(text)
             assertEquals("local file content", text)
         }
 
         controller.view = view
-        controller.handleTableClick(1, SystemFile(filePath))
+        controller.readText(SystemFile(filePath))
     }
 
     @Test fun ftpTest() {
@@ -64,8 +67,8 @@ class ControllerTest {
             assertNull(parent)
 
             val result: List<DisplayableFile> = invocation.getArgument(1)
-            assertTrue(result.size == 1)
-            assertTrue(result[0].name == "level2")
+            assertEquals(1, result.size)
+            assertEquals("level2", result[0].name)
         }
 
         controller.view = view
@@ -75,8 +78,8 @@ class ControllerTest {
 
     @Test fun testFtpContent() {
         val view = Mockito.mock(View::class.java)
-        Mockito.`when`(view.previewText(anyString(), anyLong(), any(ZonedDateTime::class.java), anyString())).thenAnswer { invocation ->
-            val text: String? = invocation.getArgument(3)
+        Mockito.`when`(view.previewText(anyString())).thenAnswer { invocation ->
+            val text: String? = invocation.getArgument(0)
             assertNotNull(text)
             assertEquals("test1 content", text)
         }
@@ -86,14 +89,16 @@ class ControllerTest {
         FtpFileSystemConfigBuilder.getInstance().setPassiveMode(opts, true)
         val file = VFS.getManager().resolveFile("ftp://user:password@localhost:58562/level2/test.txt", opts)
 
-        controller.handleTableClick(1, FtpFile(file))
+        controller.readText(FtpFile(file))
         controller.cleanup()
+    }
+
+    @Before fun reloadController() {
+        controller = ControllerImpl()
     }
 
 
     companion object {
-
-        @JvmStatic private val controller: Controller = ControllerImpl()
         @JvmStatic private val tempDir: String = System.getProperty("java.io.tmpdir")
         @JvmStatic private val dirPath: Path = Paths.get(tempDir, "fileBrowserTest")
         @JvmStatic private val filePath: Path = Paths.get(tempDir, "fileBrowserTest", "test.txt")

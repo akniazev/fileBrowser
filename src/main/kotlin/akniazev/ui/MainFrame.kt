@@ -1,9 +1,7 @@
 package akniazev.ui
 
 import akniazev.common.*
-import akniazev.controller.createButton
-import akniazev.controller.createLabel
-import akniazev.controller.notifyOnError
+import akniazev.controller.*
 import java.awt.*
 import java.awt.event.*
 import java.awt.image.BufferedImage
@@ -34,12 +32,12 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
 
     private val progressDialog = JDialog(this, "Loading", false)
 
-
     private val previewNameLabel = JLabel().apply { font = Font("Arial", Font.BOLD, 16) }
     private val previewModifiedLabel = JLabel().apply { font = Font("Arial", Font.BOLD, 16) }
     private val previewSizeLabel = JLabel().apply { font = Font("Arial", Font.BOLD, 16) }
-    private val previewText = JTextArea().apply { font = REGULAR_FONT }
     private val previewImageLabel = createLabel()
+    private val previewText = JTextArea().apply { font = REGULAR_FONT; lineWrap = true }
+    private val previewFailed = JTextArea().apply { font = REGULAR_FONT; lineWrap = true }
     private val previewContentLabel = createLabel()
     private val contentPanel = JPanel()
 
@@ -70,44 +68,40 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
         buildCentralPanel()
         buildTopPanel()
         prepareRightPanel()
+        buildProgressDialog()
 
         add(leftPanel, BorderLayout.WEST)
         add(centralPanel, BorderLayout.CENTER)
         add(rightPanel, BorderLayout.EAST)
 
         attachListeners()
-        controller.navigateTo(SystemFile(firstRoot()))
-
-
-        progressDialog.setLocationRelativeTo(this)
-        progressDialog.size = Dimension(200, 50)
-        progressDialog.isAlwaysOnTop = true
+        onFileOpen(SystemFile(firstRoot()))
     }
 
     private fun attachListeners() {
         backBtn.addActionListener {
-            notifyOnError(this) {
-                controller.navigateBack()
-            }
+            progressDialog.isVisible = true
+            controller.navigateBack()
         }
         forwardBtn.addActionListener {
-            notifyOnError(this) {
-                controller.navigateForward()
-            }
+            progressDialog.isVisible = true
+            controller.navigateForward()
+
         }
         upBtn.addActionListener {
-            notifyOnError(this) {
-                controller.navigateTo(model.parentFile!!)
-            }
+            progressDialog.isVisible = true
+            onFileOpen(model.parentFile!!)
         }
         connectFtpBtn.addActionListener(connectFtpListener)
         table.autoCreateRowSorter = true
         table.addMouseListener(object : MouseAdapter() {
-            override fun mouseClicked(e: MouseEvent) = notifyOnError(this@MainFrame) {
-                if (e.clickCount == 2) progressDialog.isVisible = true
-                println("on view: ${table.selectedRow}. actual: ${table.convertRowIndexToModel(table.selectedRow)}")
-                println("name ${model.files[table.convertRowIndexToModel(table.selectedRow)].name}")
-                controller.handleTableClick(e.clickCount, model.files[table.convertRowIndexToModel(table.selectedRow)])
+            override fun mouseClicked(e: MouseEvent) {
+                val file = model.files[table.convertRowIndexToModel(table.selectedRow)]
+                if (e.clickCount == 2) {
+                    onFileOpen(file)
+                } else {
+                    showDetails(file)
+                }
             }
         })
 
@@ -119,50 +113,39 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
             put(KeyStroke.getKeyStroke("pressed BACK_SPACE"), "navigateBack")
         }
         table.actionMap.apply {
-            put("handleSelection", object : AbstractAction() {
-                override fun actionPerformed(e: ActionEvent) {
-                    controller.handleTableClick(2, model.files[table.convertRowIndexToModel(table.selectedRow)])
+            put("handleSelection", onAction {
+                onFileOpen(model.files[table.convertRowIndexToModel(table.selectedRow)])
+            })
+            put("navigateUp", onAction {
+                if (upBtn.isEnabled)
+                    onFileOpen(model.parentFile!!)
+            })
+            put("navigateBack", onAction {
+                if (backBtn.isEnabled){
+                    progressDialog.isVisible = true
+                    controller.navigateBack()
                 }
             })
-            put("navigateUp", object : AbstractAction() {
-                override fun actionPerformed(e: ActionEvent) {
-                    if (upBtn.isEnabled) {
-                        controller.navigateTo(model.parentFile!!)
-                    }
-                }
-            })
-            put("navigateBack", object : AbstractAction() {
-                override fun actionPerformed(e: ActionEvent) {
-                    if (backBtn.isEnabled) {
-                        controller.navigateBack()
-                    }
-                }
-            })
-            put("navigateForward", object : AbstractAction() {
-                override fun actionPerformed(e: ActionEvent) {
-                    if (forwardBtn.isEnabled) {
-                        controller.navigateForward()
-                    }
+            put("navigateForward", onAction {
+                if (forwardBtn.isEnabled) {
+                    progressDialog.isVisible = true
+                    controller.navigateForward()
                 }
             })
             val nextRowAction = get("selectNextRow")
-            put("selectNextRow", object : AbstractAction() {
-                override fun actionPerformed(e: ActionEvent?) {
-                    nextRowAction.actionPerformed(e)
-                    controller.handleTableClick(1, model.files[table.convertRowIndexToModel(table.selectedRow)])
-                }
+            put("selectNextRow", onAction {
+                nextRowAction.actionPerformed(it)
+                showDetails(model.files[table.convertRowIndexToModel(table.selectedRow)])
             })
             val previousRowAction = get("selectPreviousRow")
-            put("selectPreviousRow", object : AbstractAction() {
-                override fun actionPerformed(e: ActionEvent?) {
-                    previousRowAction.actionPerformed(e)
-                    controller.handleTableClick(1, model.files[table.convertRowIndexToModel(table.selectedRow)])
-                }
+            put("selectPreviousRow", onAction {
+                previousRowAction.actionPerformed(it)
+                showDetails(model.files[table.convertRowIndexToModel(table.selectedRow)])
             })
         }
 
         addressBar.addKeyListener(object : KeyAdapter() {
-            override fun keyReleased(e: KeyEvent?) =  notifyOnError(this@MainFrame) {
+            override fun keyReleased(e: KeyEvent?) {
                 if (e?.keyCode == KeyEvent.VK_ENTER) {
                     controller.tryNavigate(addressBar.text)
                 }
@@ -200,7 +183,7 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
 
         FileSystems.getDefault().rootDirectories.asSequence().forEach { path ->
             val button = createButton(path.toString())
-            button.addActionListener { notifyOnError(this@MainFrame) { controller.navigateToRoot(path) } }
+            button.addActionListener { onFileOpen(SystemFile(path)) }
             leftPanel.add(button)
             leftPanel.add(Box.createRigidArea(SMALL_VERTICAL_GAP))
         }
@@ -228,14 +211,14 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
         rightPanel.add(previewNameLabel)
         rightPanel.add(Box.createRigidArea(Dimension(0, 20)))
 
-        rightPanel.add(createLabel("Size"))
-        rightPanel.add(Box.createRigidArea(SMALL_VERTICAL_GAP))
-        rightPanel.add(previewSizeLabel)
-        rightPanel.add(Box.createRigidArea(Dimension(0, 20)))
-
         rightPanel.add(createLabel("Last modified"))
         rightPanel.add(Box.createRigidArea(SMALL_VERTICAL_GAP))
         rightPanel.add(previewModifiedLabel)
+        rightPanel.add(Box.createRigidArea(Dimension(0, 20)))
+
+        rightPanel.add(createLabel("Size"))
+        rightPanel.add(Box.createRigidArea(SMALL_VERTICAL_GAP))
+        rightPanel.add(previewSizeLabel)
         rightPanel.add(Box.createRigidArea(Dimension(0, 20)))
 
         rightPanel.add(previewContentLabel)
@@ -311,23 +294,54 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
         topPanel.add(addressBar)
     }
 
+    private fun buildProgressDialog() {
+        val btn = createButton("Cancel")
+        btn.addActionListener { controller.cancelNavigation(); progressDialog.isVisible = false }
+        val navigationProgressBar = JProgressBar().apply {
+            isIndeterminate = true
+            preferredSize = Dimension(300, 30)
+            foreground = Color(71, 53, 77)
+        }
+        progressDialog.apply {
+            size = Dimension(470, 90)
+            isAlwaysOnTop = true
+            layout = FlowLayout(FlowLayout.LEFT)
+            addWindowListener(object : WindowAdapter() {
+                override fun windowClosing(e: WindowEvent?) {
+                    super.windowClosing(e)
+                    controller.cancelNavigation()
+                }
+            })
+            add(navigationProgressBar)
+            add(btn)
+            pack()
+            setLocationRelativeTo(this)
+        }
+    }
+
     override fun updateFileList(parent: DisplayableFile?, files: List<DisplayableFile>) {
         model.updateTable(parent, files)
         progressDialog.isVisible = false
     }
 
-    override fun previewText(name: String, size: Long, lastModified: ZonedDateTime?, textPreview: String) {
+    override fun previewFile(name: String, lastModified: ZonedDateTime?,  size: Long?) {
         if (!detailsPanelBuilt) {
             buildRightPanel()
             detailsPanelBuilt = true
         }
         previewNameLabel.text = name
-        previewSizeLabel.text = size.toString() + " bytes"
         previewModifiedLabel.text = lastModified?.format(DateTimeFormatter.ISO_DATE)
+        previewSizeLabel.text = size.toString() + " bytes"
 
+        previewContentLabel.text = ""
+        contentPanel.removeAll()
+        rightPanel.validate()
+        rightPanel.updateUI()
+    }
+
+    override fun previewText(text: String) {
         previewContentLabel.text = "Text"
-        previewText.text = textPreview
-        previewText.lineWrap = true
+        previewText.text = text
 
         contentPanel.removeAll()
         contentPanel.add(previewText)
@@ -335,35 +349,12 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
         rightPanel.updateUI()
     }
 
-    override fun previewImage(name: String, size: Long, lastModified: ZonedDateTime?, image: BufferedImage) {
-        if (!detailsPanelBuilt) {
-            buildRightPanel()
-            detailsPanelBuilt = true
-        }
-        previewNameLabel.text = name
-        previewSizeLabel.text = size.toString() + " bytes"
-        previewModifiedLabel.text = lastModified?.format(DateTimeFormatter.ISO_DATE)
-
+    override fun previewImage(image: BufferedImage) {
         previewContentLabel.text = "Image"
         previewImageLabel.icon = ImageIcon(image)
 
         contentPanel.removeAll()
         contentPanel.add(previewImageLabel, BorderLayout.CENTER)
-        rightPanel.validate()
-        rightPanel.updateUI()
-    }
-
-    override fun previewFile(name: String, size: Long, lastModified: ZonedDateTime?) {
-        if (!detailsPanelBuilt) {
-            buildRightPanel()
-            detailsPanelBuilt = true
-        }
-        previewNameLabel.text = name
-        previewSizeLabel.text = size.toString() + " bytes"
-        previewModifiedLabel.text = lastModified?.format(DateTimeFormatter.ISO_DATE)
-
-        previewContentLabel.text = ""
-        contentPanel.removeAll()
         rightPanel.validate()
         rightPanel.updateUI()
     }
@@ -380,6 +371,22 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
         rightPanel.updateUI()
     }
 
+    override fun failWithMessage(message: String) {
+        progressDialog.isVisible = false
+        JOptionPane.showMessageDialog(this, message, "Error", JOptionPane.ERROR_MESSAGE)
+    }
+
+    override fun failPreview(message: String) {
+        progressDialog.isVisible = false
+        previewContentLabel.text = ""
+        previewFailed.text = message
+
+        contentPanel.removeAll()
+        contentPanel.add(previewFailed, BorderLayout.CENTER)
+        rightPanel.validate()
+        rightPanel.updateUI()
+    }
+
     override fun ftpConnected() {
         connectFtpBtn.text = "Disconnect"
         connectFtpBtn.removeActionListener(connectFtpListener)
@@ -392,7 +399,25 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
         connectFtpBtn.removeActionListener(disconnectFtpListener)
         connectFtpBtn.addActionListener(connectFtpListener)
         connectFtpBtn.updateUI()
-        controller.navigateTo(SystemFile(firstRoot()))
+        onFileOpen(SystemFile(firstRoot()))
+    }
+
+    private fun onFileOpen(file: DisplayableFile) {
+        if (file.navigable) {
+            progressDialog.isVisible = true
+            controller.navigate(file)
+        } else {
+            controller.tryOpen(file)
+        }
+    }
+
+    private fun showDetails(file: DisplayableFile) {
+        previewFile(file.name, file.lastModified, file.size)
+        if (file.type == FileType.TEXT) {
+            controller.readText(file)
+        } else if (file.type == FileType.IMAGE) {
+            controller.readImage(file)
+        }
     }
 
     private fun firstRoot() = FileSystems.getDefault().rootDirectories.asSequence().first()

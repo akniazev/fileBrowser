@@ -14,12 +14,13 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <maven.compiler.source>1.8</maven.compiler.source>
         <maven.compiler.target>1.8</maven.compiler.target>
-        <kotlin.version>1.2.71</kotlin.version>
+        <kotlin.version>1.3.10</kotlin.version>
         <junit.version>4.12</junit.version>
         <commons-net.version>3.6</commons-net.version>
         <commons-vfs2.version>2.1</commons-vfs2.version>
         <mockito-version>2.23.0</mockito-version>
         <mock-ftp-server-version>2.7.1</mock-ftp-server-version>
+        <kotlinx-coroutines.version>1.0.1</kotlinx-coroutines.version>
     </properties>
 
     <dependencies>
@@ -32,6 +33,21 @@
             <groupId>org.jetbrains.kotlin</groupId>
             <artifactId>kotlin-stdlib-jdk8</artifactId>
             <version>${kotlin.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.jetbrains.kotlinx</groupId>
+            <artifactId>kotlinx-coroutines-core</artifactId>
+            <version>${kotlinx-coroutines.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.jetbrains.kotlinx</groupId>
+            <artifactId>kotlinx-coroutines-jdk8</artifactId>
+            <version>${kotlinx-coroutines.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.jetbrains.kotlinx</groupId>
+            <artifactId>kotlinx-coroutines-swing</artifactId>
+            <version>${kotlinx-coroutines.version}</version>
         </dependency>
         <dependency>
             <groupId>commons-net</groupId>

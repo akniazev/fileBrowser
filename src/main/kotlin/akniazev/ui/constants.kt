@@ -1,4 +1,4 @@
-package akniazev.common
+package akniazev.ui
 
 import java.awt.Dimension
 import java.awt.Font

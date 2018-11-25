@@ -1,14 +1,14 @@
 package akniazev.controller
 
 import akniazev.common.*
+import akniazev.ui.REGULAR_FONT
+import akniazev.ui.TEXT_FIELD_DIMENSION
 import org.apache.tika.Tika
 import java.awt.Color
-import java.awt.Component
 import java.awt.Dimension
+import java.awt.event.ActionEvent
 import java.awt.image.BufferedImage
-import java.lang.Exception
 import java.nio.file.Files
-import java.security.PrivilegedActionException
 import java.util.*
 import javax.swing.*
 
@@ -41,21 +41,7 @@ object FileTypeDetector {
     }
 }
 
-inline fun notifyOnError(parent: Component, message: String = "Unable to perform the operation.", block: () -> Unit) {
-    try {
-        block()
-    } catch (e: PrivilegedActionException) {
-        JOptionPane.showMessageDialog(parent, "Access denied.", "Error", JOptionPane.ERROR_MESSAGE)
-    }  catch (e: IncorrectPathException) {
-        JOptionPane.showMessageDialog(parent, "Path should lead to a directory", "Error", JOptionPane.ERROR_MESSAGE)
-    } catch (e: Exception) {
-        JOptionPane.showMessageDialog(parent, message, "Error", JOptionPane.ERROR_MESSAGE)
-    }
-}
-
-class IncorrectPathException : RuntimeException()
-
-fun getScaledImage(img: BufferedImage): BufferedImage {
+internal fun getScaledImage(img: BufferedImage): BufferedImage {
     val result = BufferedImage(200, 200, BufferedImage.TYPE_INT_RGB)
     val graphics = result.createGraphics()
     graphics.drawImage(img, 0, 0, 200, 200, null)
@@ -86,9 +72,27 @@ fun createButton(text: String?): JButton {
     }
 }
 
+inline fun onAction(crossinline block: (ActionEvent) -> Unit): Action {
+    return object : AbstractAction() {
+        override fun actionPerformed(e: ActionEvent) {
+            block(e)
+        }
+    }
+}
+
 class EvictingStack<T>(private val limit: Int) : LinkedList<T>(){
     override fun push(e: T) {
         if (size == limit) removeLast()
         super.push(e)
     }
+}
+
+sealed class Either<out A, out B> {
+    abstract fun <C> fold(left: (A) -> C, right: (B) -> C): C
+}
+class Left<out A>(val value: A) : Either<A, Nothing>() {
+    override fun <C> fold(left: (A) -> C, right: (Nothing) -> C) = left(value)
+}
+class Right<out B>(val value: B) : Either<Nothing, B>() {
+    override fun <C> fold(left: (Nothing) -> C, right: (B) -> C) = right(value)
 }

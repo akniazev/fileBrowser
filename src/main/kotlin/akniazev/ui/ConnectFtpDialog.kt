@@ -1,18 +1,11 @@
 package akniazev.ui
 
 import akniazev.common.Controller
-import akniazev.common.REGULAR_FONT
-import akniazev.common.TEXT_FIELD_DIMENSION
 import akniazev.controller.createButton
 import akniazev.controller.createLabel
 import akniazev.controller.createTextField
-import akniazev.controller.notifyOnError
-import java.awt.Dimension
-import java.awt.Frame
-import java.awt.GridBagConstraints
-import java.awt.GridBagLayout
-import javax.swing.JDialog
-import javax.swing.JPasswordField
+import java.awt.*
+import javax.swing.*
 
 class ConnectFtpDialog(frame: Frame, title: String, controller: Controller) : JDialog(frame, title) {
 
@@ -27,6 +20,7 @@ class ConnectFtpDialog(frame: Frame, title: String, controller: Controller) : JD
 
     init {
         size = Dimension(300, 300)
+        contentPane.background = Color(173, 174, 192)
         setLocationRelativeTo(parent)
 
         layout = GridBagLayout()
@@ -49,6 +43,12 @@ class ConnectFtpDialog(frame: Frame, title: String, controller: Controller) : JD
         add(createLabel("Port: "), constraints)
         constraints.gridx++
         add(port, constraints)
+        port.inputVerifier = object : InputVerifier() {
+            override fun verify(input: JComponent): Boolean {
+                return (input as JTextField).text.fold(true) { acc, char -> acc && char.isDigit()}
+            }
+            override fun shouldYieldFocus(input: JComponent?) = true
+        }
 
         // Third row
         constraints.gridy++
@@ -74,10 +74,8 @@ class ConnectFtpDialog(frame: Frame, title: String, controller: Controller) : JD
         add(connectBtn, constraints)
 
         connectBtn.addActionListener {
-            notifyOnError(this) {
-                controller.connectToFtp(host.text, port.text, user.text, String(password.password)) // :(
-                isVisible = false
-            }
+            controller.connectToFtp(host.text, port.text, user.text, String(password.password)) // :(
+            isVisible = false
         }
         closeBtn.addActionListener { isVisible = false }
     }
