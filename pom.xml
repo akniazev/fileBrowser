@@ -18,7 +18,9 @@
         <junit.version>4.12</junit.version>
         <commons-net.version>3.6</commons-net.version>
         <commons-vfs2.version>2.1</commons-vfs2.version>
+        <tika-version>1.19.1</tika-version>
         <mockito-version>2.23.0</mockito-version>
+        <assertj-swing-junit-version>3.8.0</assertj-swing-junit-version>
         <mock-ftp-server-version>2.7.1</mock-ftp-server-version>
         <kotlinx-coroutines.version>1.0.1</kotlinx-coroutines.version>
     </properties>
@@ -62,7 +64,7 @@
         <dependency>
             <groupId>org.apache.tika</groupId>
             <artifactId>tika-core</artifactId>
-            <version>1.19.1</version>
+            <version>${tika-version}</version>
         </dependency>
 
         <!--testing dependencies-->
@@ -76,6 +78,12 @@
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
             <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-swing-junit</artifactId>
+            <version>${assertj-swing-junit-version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -132,6 +140,8 @@
                     <descriptorRefs>
                         <descriptorRef>jar-with-dependencies</descriptorRef>
                     </descriptorRefs>
+                    <finalName>fileBrowser</finalName>
+                    <appendAssemblyId>false</appendAssemblyId>
                 </configuration>
             </plugin>
         </plugins>

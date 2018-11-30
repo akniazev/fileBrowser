@@ -1,16 +1,25 @@
 package akniazev.ui
 
 import akniazev.common.*
-import akniazev.controller.*
 import java.awt.*
 import java.awt.event.*
 import java.awt.image.BufferedImage
 import java.nio.file.FileSystems
+import java.nio.file.Path
 import java.time.ZonedDateTime
 import java.time.format.DateTimeFormatter
+import javax.imageio.ImageIO
 import javax.swing.*
 
 
+/**
+ * Main UI class.
+ *
+ * Implements [View] interface to communicate with [Controller] instance.
+ *
+ * @param controller an instance of [Controller], that will serve as the sole provider of data
+ * @author akniazev
+ */
 class MainFrame(private val controller: Controller) : JFrame(), View {
 
     private val rightPanel = JPanel()
@@ -32,9 +41,10 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
 
     private val progressDialog = JDialog(this, "Loading", false)
 
-    private val previewNameLabel = JLabel().apply { font = Font("Arial", Font.BOLD, 16) }
-    private val previewModifiedLabel = JLabel().apply { font = Font("Arial", Font.BOLD, 16) }
-    private val previewSizeLabel = JLabel().apply { font = Font("Arial", Font.BOLD, 16) }
+    private val sizeHeader = createLabel("Size")
+    private val previewNameLabel = JLabel()
+    private val previewModifiedLabel = JLabel()
+    private val previewSizeLabel = JLabel()
     private val previewImageLabel = createLabel()
     private val previewText = JTextArea().apply { font = REGULAR_FONT; lineWrap = true }
     private val previewFailed = JTextArea().apply { font = REGULAR_FONT; lineWrap = true }
@@ -45,11 +55,13 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
     private var detailsPanelBuilt = false
 
     private val connectFtpListener = ActionListener { connectFtpDialog.isVisible = true }
+
     private val disconnectFtpListener = ActionListener { controller.disconnectFtp() }
 
     init {
         controller.view = this
-
+        title = "FileBrowser"
+        iconImage = ImageIO.read(javaClass.getResource("/icons/JBsmall.png"))
         layout = BorderLayout()
         size = Dimension(1100, 600)
         minimumSize = Dimension(1100, 600)
@@ -74,9 +86,151 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
         add(centralPanel, BorderLayout.CENTER)
         add(rightPanel, BorderLayout.EAST)
 
+
+        addressBar.name = "addressBar"
+        table.name = "table"
+        upBtn.name = "upBtn"
+        backBtn.name = "backBtn"
+        forwardBtn.name = "forwardBtn"
+        previewText.name = "textPreview"
+        previewNameLabel.name = "previewNameLabel"
+        connectFtpDialog.name = "connectFtpDialog"
+        connectFtpBtn.name = "connectFtpBtn"
+
         attachListeners()
-        onFileOpen(SystemFile(firstRoot()))
+        onFileOpen(SystemFile(firstRoot))
     }
+
+    /**
+     * {@inheritDoc}
+     */
+    override fun updateFileList(parent: DisplayableFile?, files: List<DisplayableFile>) {
+        model.updateTable(parent, files)
+        progressDialog.isVisible = false
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    override fun previewFile(name: String, lastModified: ZonedDateTime?,  size: Long?) {
+        if (!detailsPanelBuilt) {
+            buildRightPanel()
+            detailsPanelBuilt = true
+        }
+
+        previewNameLabel.text = name
+        previewModifiedLabel.text = lastModified?.format(DateTimeFormatter.ISO_DATE)
+
+        if (size != null) {
+            sizeHeader.text = "Size"
+            previewSizeLabel.text = size.toString() + " bytes"
+        } else {
+            sizeHeader.text = ""
+            previewSizeLabel.text = ""
+        }
+
+        previewContentLabel.text = ""
+        contentPanel.removeAll()
+        rightPanel.validate()
+        rightPanel.updateUI()
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    override fun previewText(text: String) {
+        previewContentLabel.text = "Text"
+        previewText.text = text
+
+        contentPanel.removeAll()
+        contentPanel.add(previewText)
+        rightPanel.validate()
+        rightPanel.updateUI()
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    override fun previewImage(image: BufferedImage) {
+        previewContentLabel.text = "Image"
+        previewImageLabel.icon = ImageIcon(image)
+
+        contentPanel.removeAll()
+        contentPanel.add(previewImageLabel, BorderLayout.CENTER)
+        rightPanel.validate()
+        rightPanel.updateUI()
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    override fun updateAddress(newAddress: String, enabled: Boolean) {
+        addressBar.text = newAddress
+        addressBar.isEnabled = enabled
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    override fun updateNavigation(backPossible: Boolean, forwardPossible: Boolean, upPossible: Boolean) {
+        backBtn.isEnabled = backPossible
+        forwardBtn.isEnabled = forwardPossible
+        upBtn.isEnabled = upPossible
+        rightPanel.updateUI()
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    override fun failWithMessage(message: String) {
+        progressDialog.isVisible = false
+        JOptionPane.showMessageDialog(this, message, "Error", JOptionPane.ERROR_MESSAGE)
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    override fun failPreview(message: String) {
+        progressDialog.isVisible = false
+        previewContentLabel.text = ""
+        previewFailed.text = message
+
+        contentPanel.removeAll()
+        contentPanel.add(previewFailed, BorderLayout.CENTER)
+        rightPanel.validate()
+        rightPanel.updateUI()
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    override fun ftpConnected() {
+        progressDialog.isVisible = false
+        connectFtpDialog.isVisible = false
+        connectFtpBtn.text = "Disconnect"
+        connectFtpBtn.removeActionListener(connectFtpListener)
+        connectFtpBtn.addActionListener(disconnectFtpListener)
+        connectFtpBtn.updateUI()
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    override fun ftpDisconnected() {
+        connectFtpBtn.text = "FTP"
+        connectFtpBtn.removeActionListener(disconnectFtpListener)
+        connectFtpBtn.addActionListener(connectFtpListener)
+        connectFtpBtn.updateUI()
+        onFileOpen(SystemFile(firstRoot))
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    override fun showProgressBar() {
+        progressDialog.isVisible = true
+    }
+
 
     private fun attachListeners() {
         backBtn.addActionListener {
@@ -160,89 +314,97 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
     }
 
     private fun buildLeftPanel(){
-        leftPanel.minimumSize = Dimension(170, leftPanel.height)
-        leftPanel.preferredSize = Dimension(170, leftPanel.height)
-        leftPanel.layout = BoxLayout(leftPanel, BoxLayout.Y_AXIS)
-        leftPanel.background = Color(71, 53, 77)
-        leftPanel.alignmentX = Component.LEFT_ALIGNMENT
-
-        leftPanel.border = BorderFactory.createEmptyBorder(10, 20, 0, 20)
         val image = JLabel(ImageIcon(javaClass.getResource("/icons/JBsmall.png")))
-
         image.border = BorderFactory.createEmptyBorder(0, 0, 30, 0)
-        leftPanel.add(image)
-        leftPanel.add(Box.createRigidArea(Dimension(0, 40)))
-
-        extensionFilter.isEditable = true
-        extensionFilter.alignmentX = Component.LEFT_ALIGNMENT
-        extensionFilter.preferredSize = Dimension(130, 30)
-        extensionFilter.maximumSize = Dimension(130, 30)
-
-        leftPanel.add(extensionFilter)
-        leftPanel.add(Box.createRigidArea(Dimension(0, 40)))
-
-        FileSystems.getDefault().rootDirectories.asSequence().forEach { path ->
-            val button = createButton(path.toString())
-            button.addActionListener { onFileOpen(SystemFile(path)) }
-            leftPanel.add(button)
-            leftPanel.add(Box.createRigidArea(SMALL_VERTICAL_GAP))
+        extensionFilter.apply {
+            isEditable = true
+            alignmentX = Component.LEFT_ALIGNMENT
+            preferredSize = Dimension(130, 30)
+            maximumSize = Dimension(130, 30)
         }
 
-        connectFtpBtn.maximumSize = Dimension(130, 30)
-        connectFtpBtn.preferredSize = Dimension(130, 30)
-        connectFtpBtn.font = Font("Arial", Font.ITALIC, 16)
-        leftPanel.add(connectFtpBtn)
+        leftPanel.apply {
+            minimumSize = Dimension(170, leftPanel.height)
+            preferredSize = Dimension(170, leftPanel.height)
+            layout = BoxLayout(leftPanel, BoxLayout.Y_AXIS)
+            background = Color(71, 53, 77)
+            alignmentX = Component.LEFT_ALIGNMENT
+            border = BorderFactory.createEmptyBorder(10, 20, 0, 20)
 
+            add(image)
+            add(Box.createRigidArea(Dimension(0, 40)))
+
+            add(extensionFilter)
+            add(Box.createRigidArea(Dimension(0, 40)))
+
+            FileSystems.getDefault().rootDirectories.asSequence().forEach { path ->
+                val button = createButton(path.toString())
+                button.addActionListener { onFileOpen(SystemFile(path)) }
+                leftPanel.add(button)
+                leftPanel.add(Box.createRigidArea(SMALL_VERTICAL_GAP))
+            }
+
+            add(connectFtpBtn)
+        }
     }
 
     private fun prepareRightPanel() {
-        rightPanel.minimumSize = Dimension(220, rightPanel.height)
-        rightPanel.preferredSize = Dimension(220, rightPanel.height)
-        rightPanel.layout = BoxLayout(rightPanel, BoxLayout.Y_AXIS)
-        rightPanel.background = Color.WHITE
+        rightPanel.apply {
+            minimumSize = Dimension(220, rightPanel.height)
+            preferredSize = Dimension(220, rightPanel.height)
+            layout = BoxLayout(rightPanel, BoxLayout.Y_AXIS)
+            background = Color.WHITE
+        }
     }
 
     private fun buildRightPanel(){
-        rightPanel.border = BorderFactory.createEmptyBorder(10, 10, 0, 10)
-        rightPanel.add(Box.createRigidArea(Dimension(0, 45)))
-
-        rightPanel.add(createLabel("Name"))
-        rightPanel.add(Box.createRigidArea(SMALL_VERTICAL_GAP))
-        rightPanel.add(previewNameLabel)
-        rightPanel.add(Box.createRigidArea(Dimension(0, 20)))
-
-        rightPanel.add(createLabel("Last modified"))
-        rightPanel.add(Box.createRigidArea(SMALL_VERTICAL_GAP))
-        rightPanel.add(previewModifiedLabel)
-        rightPanel.add(Box.createRigidArea(Dimension(0, 20)))
-
-        rightPanel.add(createLabel("Size"))
-        rightPanel.add(Box.createRigidArea(SMALL_VERTICAL_GAP))
-        rightPanel.add(previewSizeLabel)
-        rightPanel.add(Box.createRigidArea(Dimension(0, 20)))
-
-        rightPanel.add(previewContentLabel)
-        rightPanel.add(Box.createRigidArea(SMALL_VERTICAL_GAP))
-
+        val boldFont = Font("Arial", Font.BOLD, 16)
+        previewNameLabel.font = boldFont
+        previewModifiedLabel.font = boldFont
+        previewSizeLabel.font = boldFont
         val contentPanelSize = Dimension(200, 230)
-        contentPanel.preferredSize = contentPanelSize
-        contentPanel.minimumSize = contentPanelSize
-        contentPanel.maximumSize = contentPanelSize
-        contentPanel.alignmentX = Component.LEFT_ALIGNMENT
-        contentPanel.layout = BorderLayout(0, 0)
-        contentPanel.background = rightPanel.background
-
+        contentPanel.apply {
+            preferredSize = contentPanelSize
+            minimumSize = contentPanelSize
+            maximumSize = contentPanelSize
+            alignmentX = Component.LEFT_ALIGNMENT
+            layout = BorderLayout(0, 0)
+            background = rightPanel.background
+        }
         previewImageLabel.preferredSize = contentPanelSize
         previewImageLabel.minimumSize = contentPanelSize
+        previewText.apply {
+            preferredSize = contentPanelSize
+            minimumSize = contentPanelSize
+            rows = 10
+            background = rightPanel.background
+            isEditable = false
+        }
+        rightPanel.apply {
+            border = BorderFactory.createEmptyBorder(10, 10, 0, 10)
+            add(Box.createRigidArea(Dimension(0, 45)))
 
-        previewText.preferredSize = contentPanelSize
-        previewText.minimumSize = contentPanelSize
-        previewText.rows = 10
-        previewText.background = rightPanel.background
-        previewText.isEditable = false
+            add(createLabel("Name"))
+            add(Box.createRigidArea(SMALL_VERTICAL_GAP))
+            add(previewNameLabel)
+            add(Box.createRigidArea(Dimension(0, 20)))
 
-        rightPanel.add(contentPanel)
-        rightPanel.add(Box.createRigidArea(Dimension(0, 20)))
+            add(createLabel("Last modified"))
+            add(Box.createRigidArea(SMALL_VERTICAL_GAP))
+            add(previewModifiedLabel)
+            add(Box.createRigidArea(Dimension(0, 20)))
+
+            add(sizeHeader)
+            add(Box.createRigidArea(SMALL_VERTICAL_GAP))
+            add(previewSizeLabel)
+            add(Box.createRigidArea(Dimension(0, 20)))
+
+            add(previewContentLabel)
+            add(Box.createRigidArea(SMALL_VERTICAL_GAP))
+
+            add(contentPanel)
+            add(Box.createRigidArea(Dimension(0, 20)))
+        }
     }
 
     private fun buildCentralPanel(){
@@ -271,27 +433,28 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
     }
 
     private fun buildTopPanel() {
-        topPanel.preferredSize = Dimension(topPanel.width, 50)
-        topPanel.layout = BoxLayout(topPanel, BoxLayout.LINE_AXIS)
-        topPanel.border = BorderFactory.createEmptyBorder(10, 35, 10, 10)
-        topPanel.alignmentY = Component.CENTER_ALIGNMENT
-        topPanel.background = Color(173, 174, 192)
+        addressBar.apply {
+            minimumSize = Dimension(200, 30)
+            maximumSize = Dimension(1000, 30)
+            preferredSize= Dimension(200, 30)
+        }
+        topPanel.apply {
+            preferredSize = Dimension(topPanel.width, 50)
+            layout = BoxLayout(topPanel, BoxLayout.LINE_AXIS)
+            border = BorderFactory.createEmptyBorder(10, 35, 10, 10)
+            alignmentY = Component.CENTER_ALIGNMENT
+            background = Color(173, 174, 192)
 
-        topPanel.add(backBtn)
-        topPanel.add(Box.createRigidArea(Dimension(10, 0)))
+            add(backBtn)
+            add(Box.createRigidArea(Dimension(10, 0)))
+            add(forwardBtn)
+            add(Box.createRigidArea(Dimension(10, 0)))
+            add(upBtn)
+            add(Box.createRigidArea(Dimension(10, 0)))
+            add(createLabel("Current location: "))
+            add(addressBar)
+        }
 
-        topPanel.add(forwardBtn)
-        topPanel.add(Box.createRigidArea(Dimension(10, 0)))
-
-        topPanel.add(upBtn)
-        topPanel.add(Box.createRigidArea(Dimension(10, 0)))
-
-        topPanel.add(createLabel("Current location: "))
-
-        addressBar.minimumSize = Dimension(200, 30)
-        addressBar.maximumSize = Dimension(1000, 30)
-        addressBar.preferredSize= Dimension(200, 30)
-        topPanel.add(addressBar)
     }
 
     private fun buildProgressDialog() {
@@ -319,89 +482,6 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
         }
     }
 
-    override fun updateFileList(parent: DisplayableFile?, files: List<DisplayableFile>) {
-        model.updateTable(parent, files)
-        progressDialog.isVisible = false
-    }
-
-    override fun previewFile(name: String, lastModified: ZonedDateTime?,  size: Long?) {
-        if (!detailsPanelBuilt) {
-            buildRightPanel()
-            detailsPanelBuilt = true
-        }
-        previewNameLabel.text = name
-        previewModifiedLabel.text = lastModified?.format(DateTimeFormatter.ISO_DATE)
-        previewSizeLabel.text = size.toString() + " bytes"
-
-        previewContentLabel.text = ""
-        contentPanel.removeAll()
-        rightPanel.validate()
-        rightPanel.updateUI()
-    }
-
-    override fun previewText(text: String) {
-        previewContentLabel.text = "Text"
-        previewText.text = text
-
-        contentPanel.removeAll()
-        contentPanel.add(previewText)
-        rightPanel.validate()
-        rightPanel.updateUI()
-    }
-
-    override fun previewImage(image: BufferedImage) {
-        previewContentLabel.text = "Image"
-        previewImageLabel.icon = ImageIcon(image)
-
-        contentPanel.removeAll()
-        contentPanel.add(previewImageLabel, BorderLayout.CENTER)
-        rightPanel.validate()
-        rightPanel.updateUI()
-    }
-
-    override fun updateAddress(newAddress: String, enabled: Boolean) {
-        addressBar.text = newAddress
-        addressBar.isEnabled = enabled
-    }
-
-    override fun updateNavigation(backPossible: Boolean, forwardPossible: Boolean, upPossible: Boolean) {
-        backBtn.isEnabled = backPossible
-        forwardBtn.isEnabled = forwardPossible
-        upBtn.isEnabled = upPossible
-        rightPanel.updateUI()
-    }
-
-    override fun failWithMessage(message: String) {
-        progressDialog.isVisible = false
-        JOptionPane.showMessageDialog(this, message, "Error", JOptionPane.ERROR_MESSAGE)
-    }
-
-    override fun failPreview(message: String) {
-        progressDialog.isVisible = false
-        previewContentLabel.text = ""
-        previewFailed.text = message
-
-        contentPanel.removeAll()
-        contentPanel.add(previewFailed, BorderLayout.CENTER)
-        rightPanel.validate()
-        rightPanel.updateUI()
-    }
-
-    override fun ftpConnected() {
-        connectFtpBtn.text = "Disconnect"
-        connectFtpBtn.removeActionListener(connectFtpListener)
-        connectFtpBtn.addActionListener(disconnectFtpListener)
-        connectFtpBtn.updateUI()
-    }
-
-    override fun ftpDisconnected() {
-        connectFtpBtn.text = "FTP"
-        connectFtpBtn.removeActionListener(disconnectFtpListener)
-        connectFtpBtn.addActionListener(connectFtpListener)
-        connectFtpBtn.updateUI()
-        onFileOpen(SystemFile(firstRoot()))
-    }
-
     private fun onFileOpen(file: DisplayableFile) {
         if (file.navigable) {
             progressDialog.isVisible = true
@@ -414,11 +494,14 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
     private fun showDetails(file: DisplayableFile) {
         previewFile(file.name, file.lastModified, file.size)
         if (file.type == FileType.TEXT) {
+            previewContentLabel.text = "Loading content.."
             controller.readText(file)
         } else if (file.type == FileType.IMAGE) {
+            previewContentLabel.text = "Loading content.."
             controller.readImage(file)
         }
     }
 
-    private fun firstRoot() = FileSystems.getDefault().rootDirectories.asSequence().first()
+    private val firstRoot: Path
+        get() = FileSystems.getDefault().rootDirectories.asSequence().first()
 }

@@ -3,9 +3,16 @@ package akniazev.ui
 import akniazev.common.DisplayableFile
 import akniazev.common.FileType
 import java.awt.*
+import java.awt.event.FocusAdapter
+import java.awt.event.FocusEvent
 import javax.swing.table.AbstractTableModel
 import javax.swing.*
 import javax.swing.table.TableCellRenderer
+
+
+/**
+ * This file contains components, used by the [MainFrame] and [ConnectFtpDialog].
+ */
 
 
 class TableModel : AbstractTableModel() {
@@ -76,6 +83,40 @@ class IconCellRenderer : TableCellRenderer {
             label.foreground = table?.foreground ?: label.foreground
         }
         return label
+    }
+}
+
+
+class Validator<T : JComponent>(private val component: T, var valid: Boolean = false, val validationFun: (T) -> Boolean){
+    private val validationSuccessBorder = BorderFactory.createLineBorder(Color.GREEN, 1)
+    private val validationFailBorder = BorderFactory.createLineBorder(Color.RED, 1)
+
+    fun validate() : Boolean{
+        valid = validationFun(component)
+        if (valid) {
+            component.border = validationSuccessBorder
+        } else {
+            component.border = validationFailBorder
+        }
+        return valid
+    }
+}
+
+class PlaceholderListener(private val placeholder: String) : FocusAdapter() {
+    override fun focusGained(e: FocusEvent) {
+        val target = e.source as JTextField
+        if (target.text == placeholder) {
+            target.text = ""
+            target.foreground = Color.BLACK
+        }
+    }
+
+    override fun focusLost(e: FocusEvent) {
+        val target = e.source as JTextField
+        if (target.text.isEmpty()) {
+            target.foreground = Color.GRAY
+            target.text = placeholder
+        }
     }
 }
 
