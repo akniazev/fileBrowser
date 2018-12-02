@@ -2,18 +2,14 @@ package akniazev
 
 import akniazev.controller.ControllerImpl
 import akniazev.ui.MainFrame
+import org.assertj.swing.core.GenericTypeMatcher
 import org.assertj.swing.data.TableCell
 import org.assertj.swing.fixture.FrameFixture
 import org.assertj.swing.edt.GuiActionRunner
 import java.awt.Frame
 import java.awt.event.KeyEvent
 import org.assertj.swing.edt.FailOnThreadViolationRepaintManager
-import org.assertj.swing.edt.GuiActionRunner.execute
-import org.assertj.swing.edt.GuiTask
-import org.assertj.swing.timing.Condition
-import org.assertj.swing.timing.Pause
 import org.assertj.swing.timing.Pause.pause
-import org.assertj.swing.timing.Timeout.timeout
 import org.mockftpserver.fake.FakeFtpServer
 import java.nio.file.Files
 import java.nio.file.Path
@@ -23,7 +19,13 @@ import org.mockftpserver.fake.UserAccount
 import org.mockftpserver.fake.filesystem.DirectoryEntry
 import org.mockftpserver.fake.filesystem.FileEntry
 import org.mockftpserver.fake.filesystem.UnixFakeFileSystem
+import java.io.File
+import java.io.FileOutputStream
 import java.util.*
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
+import javax.swing.JDialog
+import javax.swing.JLabel
 
 
 class UITest {
@@ -44,10 +46,11 @@ class UITest {
     @Test fun testAddressBarNavigation() {
         window.table("table")
                 .requireColumnCount(3)
-                .requireRowCount(2)
+                .requireRowCount(4)
                 .requireCellValue(TableCell.row(0).column(1), "directory")
-                .requireCellValue(TableCell.row(1).column(1), "textFile.txt")
-
+                .requireCellValue(TableCell.row(1).column(1), "image.png")
+                .requireCellValue(TableCell.row(2).column(1), "textFile.txt")
+                .requireCellValue(TableCell.row(3).column(1), "zipArchive.zip")
     }
 
     @Test fun testTableNavigation() {
@@ -63,7 +66,7 @@ class UITest {
 
     @Test fun testSorting() {
         navigateToInnerDir()
-        window.table("table").tableHeader().clickColumn(1).clickColumn(1)
+        window.table("table").tableHeader().clickColumn(1)
         window.table("table")
                 .requireRowCount(3)
                 .requireCellValue(TableCell.row(0).column(1), "third.c")
@@ -125,16 +128,139 @@ class UITest {
         window.textBox("addressBar").requireText(testDir.toString())
     }
 
-    @Test fun testTextPreview() {
-        window.table()
+    @Test fun testFiltering() {
+        window.table("table").requireRowCount(4)
+        window.comboBox("extensionFilter")
+                .replaceText("txt")
+                .pressAndReleaseKeys(KeyEvent.VK_ENTER)
+
+        window.table("table")
+                .requireRowCount(2)
+                .requireCellValue(TableCell.row(0).column(1), "directory")
                 .requireCellValue(TableCell.row(1).column(1), "textFile.txt")
-                .cell(TableCell.row(1).column(1)).click()
+
+        window.comboBox("extensionFilter")
+                .replaceText("Show all files")
+                .pressAndReleaseKeys(KeyEvent.VK_ENTER)
+
+        window.table("table").requireRowCount(4)
+    }
+
+    @Test fun testNavigationFail() {
+        window.textBox("addressBar")
+                .enterText(File.separator)
+                .enterText("wrong")
+                .pressAndReleaseKeys(KeyEvent.VK_ENTER)
+
+        window.dialog()
+                .requireVisible()
+                .requireModal()
+                .label(object : GenericTypeMatcher<JLabel>(JLabel::class.java) {
+                    override fun isMatching(label: JLabel?): Boolean {
+                        return label?.text != null
+                    }
+                })
+                .requireText("Path should lead to a directory.")
+    }
+
+    @Test fun testTextPreview() {
+        window.table("table")
+                .requireCellValue(TableCell.row(2).column(1), "textFile.txt")
+                .cell(TableCell.row(2).column(1)).click()
         window.label("previewNameLabel")
                 .requireVisible()
                 .requireText("textFile.txt")
         window.textBox("textPreview")
                 .requireVisible()
                 .requireText("Test file content")
+    }
+
+    @Test fun testImagePreview() {
+        window.table("table")
+                .requireCellValue(TableCell.row(1).column(1), "image.png")
+                .cell(TableCell.row(1).column(1)).click()
+        pause(500)
+
+        window.label("previewNameLabel")
+                .requireVisible()
+                .requireText("image.png")
+        window.label("previewImage").requireVisible()
+
+    }
+
+    @Test fun testZipFileNavigation() {
+        navigateToZipFile()
+
+        window.table("table")
+                .requireRowCount(4)
+                .requireCellValue(TableCell.row(0).column(1), "emptyDirectory")
+                .requireCellValue(TableCell.row(1).column(1), "first.txt")
+                .requireCellValue(TableCell.row(2).column(1), "second.txt")
+                .requireCellValue(TableCell.row(3).column(1), "third.png")
+        window.table("table")
+                .cell(TableCell.row(0).column(1))
+                .doubleClick()
+        pause(200)
+        window.table("table").requireRowCount(0)
+        window.textBox("addressBar")
+                .requireDisabled()
+                .requireText("/emptyDirectory/")
+
+        window.button("upBtn").click()
+        pause(200)
+        window.table("table").requireRowCount(4)
+        window.textBox("addressBar")
+                .requireDisabled()
+                .requireText("/")
+
+        window.button("upBtn").click()
+        pause(200)
+        window.table("table").requireRowCount(4)
+        window.textBox("addressBar")
+                .requireEnabled()
+                .requireText(testDir.toString())
+
+    }
+
+    @Test fun testZipFileTextPreview() {
+        navigateToZipFile()
+
+        window.table("table")
+                .requireCellValue(TableCell.row(1).column(1), "first.txt")
+                .cell(TableCell.row(1).column(1)).click()
+
+        window.label("previewNameLabel")
+                .requireVisible()
+                .requireText("first.txt")
+        window.textBox("textPreview")
+                .requireVisible()
+                .requireText("first content")
+
+        window.table("table")
+                .requireCellValue(TableCell.row(2).column(1), "second.txt")
+                .cell(TableCell.row(2).column(1)).click()
+
+        window.label("previewNameLabel")
+                .requireVisible()
+                .requireText("second.txt")
+        window.textBox("textPreview")
+                .requireVisible()
+                .requireText("second content")
+    }
+
+
+    @Test fun testZipFileImagePreview() {
+        navigateToZipFile()
+
+        window.table("table")
+                .requireCellValue(TableCell.row(3).column(1), "third.png")
+                .cell(TableCell.row(3).column(1)).click()
+        pause(500)
+
+        window.label("previewNameLabel")
+                .requireVisible()
+                .requireText("third.png")
+        window.label("previewImage").requireVisible()
     }
 
     @Test fun testFtpValidation() {
@@ -198,18 +324,57 @@ class UITest {
     }
 
     @Test fun testFtpNavigation() {
+        val ftpUrl = "ftp://user:***@localhost:58562/"
         connectToFtp()
         window.table("table")
                 .requireRowCount(3)
                 .requireCellValue(TableCell.row(0).column(1), "dir1")
                 .requireCellValue(TableCell.row(1).column(1), "dir2")
                 .requireCellValue(TableCell.row(2).column(1), "dir3")
+        window.textBox("addressBar")
+                .requireDisabled()
+                .requireText(ftpUrl)
+        window.table("table")
                 .cell(TableCell.row(0).column(1))
                 .doubleClick()
+        pause(500)
 
         window.table("table")
                 .requireRowCount(1)
                 .requireCellValue(TableCell.row(0).column(1), "test.txt")
+        window.textBox("addressBar").requireText(ftpUrl + "dir1")
+        window.button("upBtn").click()
+        pause(500)
+
+        window.table("table").requireRowCount(3)
+        window.textBox("addressBar").requireText(ftpUrl)
+    }
+
+    @Test fun testFtpConnectionFail() {
+        window.button("connectFtpBtn").click()
+        window.dialog("connectFtpDialog").textBox("host").enterText("localhost")
+        window.dialog("connectFtpDialog").textBox("port").enterText("58562")
+        window.dialog("connectFtpDialog").textBox("user").enterText("wrong")
+        window.dialog("connectFtpDialog").textBox("password").enterText("pass")
+
+        window.dialog("connectFtpDialog").button("connectBtn")
+                .requireEnabled()
+                .click()
+        pause(1000)
+
+        window.dialog(object : GenericTypeMatcher<JDialog>(JDialog::class.java) {
+                override fun isMatching(dialog: JDialog?): Boolean {
+                    return dialog?.title == "Error"
+                }
+                })
+                .requireVisible()
+                .requireModal()
+                .label(object : GenericTypeMatcher<JLabel>(JLabel::class.java) {
+                    override fun isMatching(label: JLabel?): Boolean {
+                        return label?.text != null
+                    }
+                })
+                .requireText("Can't connect to FTP with provided data.")
     }
 
     @Test fun testFtTextPreview() {
@@ -217,7 +382,7 @@ class UITest {
         window.table("table")
                 .cell(TableCell.row(0).column(1))
                 .doubleClick()
-
+        pause(500)
         window.table("table").selectRows(0)
 
         window.label("previewNameLabel")
@@ -228,7 +393,25 @@ class UITest {
                 .requireText("test content")
     }
 
+    @Test fun testFtpImagePreview() {
+        connectToFtp()
 
+        window.table("table")
+                .requireCellValue(TableCell.row(1).column(1), "dir2")
+                .cell(TableCell.row(1).column(1))
+                .doubleClick()
+        pause(500)
+
+        window.table("table")
+                .requireCellValue(TableCell.row(0).column(1), "image.png")
+                .cell(TableCell.row(0).column(1)).click()
+        pause(500)
+
+        window.label("previewNameLabel")
+                .requireVisible()
+                .requireText("image.png")
+        window.label("previewImage").requireVisible()
+    }
 
     private fun navigateToTempDir() {
         window.textBox("addressBar").deleteText()
@@ -238,6 +421,13 @@ class UITest {
 
     private fun navigateToInnerDir() {
         window.table("table").cell(TableCell.row(0).column(1)).doubleClick()
+    }
+
+    private fun navigateToZipFile() {
+        window.table("table")
+                .requireCellValue(TableCell.row(3).column(1), "zipArchive.zip")
+                .cell(TableCell.row(3).column(1)).doubleClick()
+        pause(500)
     }
 
     private fun connectToFtp() {
@@ -250,7 +440,7 @@ class UITest {
         window.dialog("connectFtpDialog").button("connectBtn")
                 .requireEnabled()
                 .click()
-        pause(2000)
+        pause(1000)
     }
 
     companion object {
@@ -258,16 +448,24 @@ class UITest {
         @JvmStatic private val tempDir: String = System.getProperty("java.io.tmpdir")
         @JvmStatic private val testDir: Path = Paths.get(tempDir, "fileBrowserTest")
         @JvmStatic private val level2Dir: Path = Paths.get(tempDir, "fileBrowserTest", "directory")
-        @JvmStatic private val first: Path = Paths.get(tempDir, "fileBrowserTest", "directory", "first.a")
-        @JvmStatic private val second: Path = Paths.get(tempDir, "fileBrowserTest", "directory", "second.b")
-        @JvmStatic private val third: Path = Paths.get(tempDir, "fileBrowserTest", "directory", "third.c")
-        @JvmStatic private val textFile: Path = Paths.get(tempDir, "fileBrowserTest", "textFile.txt")
         @JvmStatic private val fakeFtpServer = FakeFtpServer()
 
         @JvmStatic
         @BeforeClass
         fun setup() {
+            // Fails the test if UI is being accessed from something other that EDT.
             FailOnThreadViolationRepaintManager.install()
+
+            val textFile: Path = Paths.get(tempDir, "fileBrowserTest", "textFile.txt")
+            val image: Path = Paths.get(tempDir, "fileBrowserTest", "image.png")
+            val archive: Path = Paths.get(tempDir, "fileBrowserTest", "zipArchive.zip")
+            val first: Path = Paths.get(tempDir, "fileBrowserTest", "directory", "first.a")
+            val second: Path = Paths.get(tempDir, "fileBrowserTest", "directory", "second.b")
+            val third: Path = Paths.get(tempDir, "fileBrowserTest", "directory", "third.c")
+
+            if (Files.exists(testDir))
+                deleteTestDir()
+
             Files.createDirectory(testDir)
             Files.createDirectory(level2Dir)
             Files.createFile(textFile)
@@ -278,6 +476,23 @@ class UITest {
             Files.createFile(second)
             Files.createFile(third)
 
+            val resourceImage = Paths.get(javaClass.getResource("/image.png").toURI())
+            Files.copy(resourceImage, image)
+
+            ZipOutputStream(FileOutputStream(archive.toFile())).use {
+                it.putNextEntry(ZipEntry("emptyDirectory/"))
+                it.closeEntry()
+                it.putNextEntry(ZipEntry("first.txt"))
+                it.write("first content".toByteArray())
+                it.closeEntry()
+                it.putNextEntry(ZipEntry("second.txt"))
+                it.write("second content".toByteArray())
+                it.closeEntry()
+                it.putNextEntry(ZipEntry("third.png"))
+                Files.copy(image, it)
+                it.closeEntry()
+            }
+
             fakeFtpServer.addUserAccount(UserAccount("user", "password", "/"))
 
             val fileSystem = UnixFakeFileSystem()
@@ -286,6 +501,9 @@ class UITest {
             fileSystem.add(DirectoryEntry("/dir2"))
             fileSystem.add(DirectoryEntry("/dir3"))
             fileSystem.add(FileEntry("/dir1/test.txt", "test content").apply { lastModified = Date() })
+            val imageEntry = FileEntry("/dir2/image.png")
+            Files.copy(image, imageEntry.createOutputStream(true))
+            fileSystem.add(imageEntry)
             fakeFtpServer.fileSystem = fileSystem
             fakeFtpServer.serverControlPort = 58562
 
@@ -297,15 +515,17 @@ class UITest {
         @JvmStatic
         @AfterClass
         fun teardown() {
-            Files.delete(first)
-            Files.delete(second)
-            Files.delete(third)
-            Files.delete(textFile)
-            Files.delete(level2Dir)
-            Files.delete(testDir)
+            deleteTestDir()
             fakeFtpServer.stop()
         }
 
+        @JvmStatic
+        private fun deleteTestDir() {
+            Files.walk(testDir)
+                    .sorted(Comparator.reverseOrder())
+                    .map(Path::toFile)
+                    .forEach { it.delete() }
+        }
     }
 
 }

@@ -28,6 +28,12 @@ Clicking on the table headers triggers sorting by the selected column.
 `Alt + Up arrow / Backspace` - To previous level  
 `Enter / Spacebar` - Navigate to directory or open file  
 
+#### Changes since 1.1
+- Instead of waiting on the progressbar, all the entries are loaded on the fly. 
+User can choose to navigate to the next directory without waiting for the previous one to fully load.
+- Improved keyboard navigation.
+- Bugfixes and UI tests.
+
 #### Changes since 1.0
 - All resources are now processed in separate coroutines, without blocking the main thread.  
 - Progress dialog with possibility to cancel the current process.  
@@ -36,8 +42,6 @@ Clicking on the table headers triggers sorting by the selected column.
 - Added validation for FTP parameters.  
 
 #### Further improvements  
-- Use Channels to pass files one by one from the loading coroutine.
-- Delay progressbars, so that they appear only if the operation takes more than certain threshold.
 - OS-specific implementations to get more file attributes.
 - Support several FTP connections simultaneously
 - Search mechanism.

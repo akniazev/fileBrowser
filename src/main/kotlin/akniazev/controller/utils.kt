@@ -48,20 +48,6 @@ object FileTypeDetector {
     }
 }
 
-
-/**
- * Container class with information about current navigation target.
- *
- * @param parent previous directory in the hierarchy
- * @param children contents of the directory
- * @param newPath path to the current directory
- * @param addressEnabled whether navigation from address bar is possible
- */
-class NavigationResult(val parent: DisplayableFile?,
-                       val children: List<DisplayableFile>,
-                       val newPath: String,
-                       val addressEnabled: Boolean)
-
 /**
  * Subclass of [LinkedList], with maximum capacity. If the capacity is reached, the last element is removed.
  *
@@ -73,22 +59,6 @@ class EvictingStack<T>(private val limit: Int) : LinkedList<T>(){
         super.push(e)
     }
 }
-
-
-/**
- * Class to represent the result of an operation
- * where [Left] instance indicates failure and [Right] instance indicates success.
- */
-sealed class Either<out A, out B> {
-    abstract fun <C> fold(left: (A) -> C, right: (B) -> C): C
-}
-class Left<out A>(val value: A) : Either<A, Nothing>() {
-    override fun <C> fold(left: (A) -> C, right: (Nothing) -> C) = left(value)
-}
-class Right<out B>(val value: B) : Either<Nothing, B>() {
-    override fun <C> fold(left: (Nothing) -> C, right: (B) -> C) = right(value)
-}
-
 
 /**
  * Function to scale the image to fit certain size.

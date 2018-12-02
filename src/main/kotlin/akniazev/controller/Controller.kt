@@ -3,6 +3,7 @@ package akniazev.controller
 import akniazev.common.*
 import akniazev.common.View
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.*
 import kotlinx.coroutines.swing.Swing
 import org.apache.commons.vfs2.FileSystemOptions
 import org.apache.commons.vfs2.VFS
@@ -13,11 +14,13 @@ import java.io.InputStreamReader
 import java.net.URI
 import java.nio.CharBuffer
 import java.nio.file.*
-import java.nio.file.attribute.BasicFileAttributes
+import java.nio.file.attribute.BasicFileAttributeView
 import java.time.ZoneId
 import java.util.*
+import java.util.concurrent.CancellationException
 import java.util.zip.ZipError
 import javax.imageio.ImageIO
+import kotlin.streams.asSequence
 
 typealias FtpFS = org.apache.commons.vfs2.FileSystem
 
@@ -44,7 +47,7 @@ class ControllerImpl : Controller {
     private val desktop: Desktop? = if (Desktop.isDesktopSupported()
             && Desktop.getDesktop().isSupported(Desktop.Action.OPEN)) Desktop.getDesktop() else null
     private var currentJob: Deferred<*>? = null
-
+    private var navigationChannel: ReceiveChannel<DisplayableFile>? = null
 
     /**
      * {@inheritDoc}
@@ -86,7 +89,7 @@ class ControllerImpl : Controller {
         if (Files.exists(path) && Files.isDirectory(path))
             navigate(SystemFile(path))
         else
-            view.failWithMessage("Path should lead to a directory")
+            view.failWithMessage("Path should lead to a directory.")
     }
 
     /**
@@ -105,33 +108,30 @@ class ControllerImpl : Controller {
     /**
      * {@inheritDoc}
      * @see readContent
-     * @see View.previewText
-     * @see View.failPreview
      */
     override fun readText(file: DisplayableFile) {
         GlobalScope.launch(Dispatchers.Swing) {
             currentJob?.cancel()
-            val deferred = async(Dispatchers.Default) {
-                try {
+            try {
+                val deferred = async(Dispatchers.Default) {
                     when (file) {
                         is SystemFile, is ZipFile -> {
                             val path = (file as? SystemFile)?.path ?: (file as? ZipFile)?.file
-                            Right(readContent(Files.newBufferedReader(path)))
+                            readContent(Files.newBufferedReader(path))
                         }
-                        is FtpFile -> Right(readContent(BufferedReader(InputStreamReader(file.file.content.inputStream))))
-                        else -> Left("Unexpected file type.")
+                        is FtpFile -> readContent(BufferedReader(InputStreamReader(file.file.content.inputStream)))
+                        else -> throw IllegalArgumentException()
                     }
-                } catch(e: Exception) {
-                    Left("Can't read contents of the file")
                 }
+                currentJob = deferred
+                val result = deferred.await()
+                if (deferred.isCompleted)
+                    view.previewText(result)
+            } catch (e: CancellationException) {
+                // do nothing, JobCancellationException is thrown because the coroutine was canceled
+            } catch (e: Exception) {
+                view.failPreview("Can't read contents of the file")
             }
-            currentJob = deferred
-            val result = deferred.await()
-            if (deferred.isCompleted)
-                when(result) {
-                    is Left -> view.failPreview(result.value)
-                    is Right -> view.previewText(result.value)
-                }
         }
     }
 
@@ -144,27 +144,26 @@ class ControllerImpl : Controller {
     override fun readImage(file: DisplayableFile) {
         GlobalScope.launch(Dispatchers.Swing) {
             currentJob?.cancel()
-            val deferred = async(Dispatchers.Default) {
-                try {
+            try {
+                val deferred = async(Dispatchers.Default) {
                     when (file) {
                         is SystemFile, is ZipFile -> {
                             val path = (file as? SystemFile)?.path ?: (file as? ZipFile)?.file
-                            Right(getScaledImage(ImageIO.read(path?.toUri()?.toURL())))
+                            getScaledImage(ImageIO.read(path?.toUri()?.toURL()))
                         }
-                        is FtpFile -> Right(getScaledImage(ImageIO.read(file.file.content.inputStream)))
-                        else -> Left("Unexpected file type.")
+                        is FtpFile -> getScaledImage(ImageIO.read(file.file.content.inputStream))
+                        else -> throw IllegalArgumentException()
                     }
-                } catch(e: Exception) {
-                    Left("Can't preview image.")
                 }
+                currentJob = deferred
+                val result = deferred.await()
+                if (deferred.isCompleted)
+                    view.previewImage(result)
+            } catch (e: CancellationException) {
+                // do nothing, JobCancellationException is thrown because the coroutine was canceled
+            } catch (e: Exception) {
+                view.failPreview("Can't read contents of the file")
             }
-            currentJob = deferred
-            val result = deferred.await()
-            if (deferred.isCompleted)
-                when(result) {
-                    is Left -> view.failPreview(result.value)
-                    is Right -> view.previewImage(result.value)
-                }
         }
     }
 
@@ -194,25 +193,23 @@ class ControllerImpl : Controller {
             val url = builder.toString()
             val opts = FileSystemOptions()
             FtpFileSystemConfigBuilder.getInstance().setPassiveMode(opts, true)
-            val deferred = async(Dispatchers.Default) {
-                try {
-                    Right(VFS.getManager().resolveFile(url, opts))
-                } catch (e: Exception) {
-                    Left("Can't connect to FTP with provided data.")
+
+            try {
+                val deferred = async(Dispatchers.Default) {
+                    VFS.getManager().resolveFile(url, opts)
                 }
-            }
-            currentJob = deferred
-            val result = deferred.await()
-            if (deferred.isCompleted) {
-                when (result) {
-                    is Left -> view.failWithMessage(result.value)
-                    is Right -> {
-                        ftpConnected = true
-                        ftpFileSystem = result.value.fileSystem
-                        navigate(FtpFile(result.value))
-                        view.ftpConnected()
-                    }
+                currentJob = deferred
+                val result = deferred.await()
+                if (deferred.isCompleted) {
+                    ftpConnected = true
+                    ftpFileSystem = result.fileSystem
+                    navigate(FtpFile(result))
+                    view.ftpConnected()
                 }
+            } catch (e: CancellationException) {
+                // do nothing, JobCancellationException is thrown because the coroutine was canceled
+            }  catch (e: Exception) {
+                view.failWithMessage("Can't connect to FTP with provided data.")
             }
         }
     }
@@ -267,40 +264,45 @@ class ControllerImpl : Controller {
     private fun doNavigate(file: DisplayableFile, updatePosition: (DisplayableFile) -> Unit) {
         GlobalScope.launch(Dispatchers.Swing) {
             currentJob?.cancel()
-            val deferred = async(Dispatchers.Default) {
-                try {
-                    val target  = if (file is SystemFile && file.extension == "zip") {
-                        val fileSystem = getFileSystem(file.path)
-                        val newPath = fileSystem.getPath("/")
-                        ZipFile(newPath, file.parent!!)
-                    } else file
-                    val children = listChildren(target, ::isActive)
-                    Right(NavigationResult(file.parent, children, file.pathString, file is SystemFile))
-                } catch (e: AccessDeniedException) {
-                    Left("Operation is forbidden.")
-                } catch (e: ZipError) {
-                    Left("Can't open the archive.")
-                } catch (e: Exception) {
-                    Left("Something went wrong.")
-                }
-            }
-            currentJob = deferred
-            val result = deferred.await()
-            if (deferred.isCompleted) {
-                when (result) {
-                    is Left -> view.failWithMessage(result.value)
-                    is Right -> {
-                        view.updateFileList(result.value.parent, result.value.children)
-                        view.updateAddress(result.value.newPath, result.value.addressEnabled)
-                        if (currentFile != null) {
-                            updatePosition(currentFile!!)
-                        }
-                        currentFile = file
-                        view.updateNavigation(navigateBackStack.isNotEmpty(),
-                                navigateForwardStack.isNotEmpty(),
-                                file is ZipFile || !file.isRoot)
+            navigationChannel?.cancel()
+            try {
+                val target  = if (file is SystemFile && file.extension == "zip") {
+                    val fileSystem = getFileSystem(file.path)
+                    val newPath = fileSystem.getPath("/")
+                    ZipFile(newPath, file.parent!!)
+                } else file
+
+                if (target !is FtpFile) {
+                    val pathToCheck = (target as? SystemFile)?.path ?: (target as ZipFile).file
+                    if (!Files.isReadable(pathToCheck)) {
+                        view.failWithMessage("Access denied.")
+                        return@launch
                     }
                 }
+
+                val channel = listChildren(target, this)
+                navigationChannel = channel
+
+                view.startNavigation(target.parent)
+                view.updateAddress(target.pathString, target is SystemFile)
+                if (currentFile != null) {
+                    updatePosition(currentFile!!)
+                }
+                currentFile = target
+                view.updateNavigation(navigateBackStack.isNotEmpty(), navigateForwardStack.isNotEmpty(),
+                        target is ZipFile || !target.isRoot)
+
+                for (receivedFile in channel) {
+                    view.updateFileList(receivedFile)
+                }
+                view.endNavigation()
+            } catch (e: Throwable) {
+                val message = when(e) {
+                    is AccessDeniedException -> "Access denied."
+                    is ZipError -> "Can't open the archive."
+                    else -> "Something went wrong."
+                }
+                view.failWithMessage(message)
             }
         }
     }
@@ -313,47 +315,44 @@ class ControllerImpl : Controller {
      * @see java.nio.file.Files.walkFileTree
      * @see org.apache.commons.vfs2.FileObject
      */
-    private fun listChildren(file: DisplayableFile, isActive: () -> Boolean): List<DisplayableFile> {
-        val resultList = mutableListOf<DisplayableFile>()
-        when(file) {
-            is SystemFile -> {
-                Files.walkFileTree(file.path, emptySet(), 1, object : SimpleFileVisitor<Path>() {
-                    override fun visitFile(visitedFile: Path, attrs: BasicFileAttributes): FileVisitResult {
-                        if (isActive()) {
-                            resultList.add(SystemFile(visitedFile,
-                                    attrs.lastModifiedTime().toInstant().atZone(ZoneId.systemDefault()),
-                                    if (visitedFile.toFile().isDirectory) null else attrs.size()))
-                            return FileVisitResult.CONTINUE
+    @UseExperimental(ExperimentalCoroutinesApi::class)
+    private suspend fun listChildren(file: DisplayableFile, scope: CoroutineScope): ReceiveChannel<DisplayableFile> {
+        return scope.produce(Dispatchers.Default) {
+            when (file) {
+                is SystemFile -> {
+                    Files.list(file.path).asSequence()
+                            .filter { isActive }
+                            .forEach { path ->
+                                val attrs = Files.getFileAttributeView(path, BasicFileAttributeView::class.java).readAttributes()
+                                send(SystemFile(path,
+                                        attrs.lastModifiedTime().toInstant().atZone(ZoneId.systemDefault()),
+                                        if (path.toFile().isDirectory) null else attrs.size()))
+                            }
+                }
+                is ZipFile -> {
+                    Files.list(file.file).asSequence()
+                            .filter { isActive }
+                            .forEach {path ->
+                                val attrs = Files.getFileAttributeView(path, BasicFileAttributeView::class.java).readAttributes()
+                                send(ZipFile(path, file.systemDir,
+                                        attrs.lastModifiedTime().toInstant().atZone(ZoneId.systemDefault()),
+                                        if (Files.isDirectory(path)) null else attrs.size()))
+                            }
+                }
+                is FtpFile ->  {
+                    for (f in file.file.children) {
+                        if (isActive) {
+                            send(FtpFile(f))
+                        } else {
+                            break
                         }
-                        return FileVisitResult.TERMINATE
-                    }
-                })
-            }
-            is ZipFile -> {
-                Files.walkFileTree(file.file, emptySet(), 1, object : SimpleFileVisitor<Path>() {
-                    override fun visitFile(visitedFile: Path, attrs: BasicFileAttributes): FileVisitResult {
-                        if (isActive()) {
-                            resultList.add(ZipFile(visitedFile, file.systemDir,
-                                    attrs.lastModifiedTime().toInstant().atZone(ZoneId.systemDefault()),
-                                    if (Files.isDirectory(visitedFile)) null else attrs.size()))
-                            return FileVisitResult.CONTINUE
-                        }
-                        return FileVisitResult.TERMINATE
-                    }
-                })
-            }
-            is FtpFile ->  {
-                for (f in file.file.children) {
-                    if (isActive()) {
-                        resultList.add(FtpFile(f))
-                    } else {
-                        break
                     }
                 }
+                else -> throw IllegalArgumentException()
             }
-            else -> throw IllegalArgumentException()
+            close()
         }
-        return resultList
+
     }
 
     private fun getFileSystem(path: Path): FileSystem {

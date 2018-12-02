@@ -18,8 +18,9 @@ import javax.swing.table.TableCellRenderer
 class TableModel : AbstractTableModel() {
     private val columns = listOf("", "Filename", "Extension")
     private var filter: String = "Show all files"
-    private var cachedFiles: List<DisplayableFile> = emptyList()
-    var files: List<DisplayableFile> = emptyList()
+    private val filterFun: (DisplayableFile) -> Boolean = { filter == "Show all files" || it.isDirectory || it.extension == filter }
+    private var cachedFiles: MutableList<DisplayableFile> = mutableListOf()
+    var files: MutableList<DisplayableFile> = mutableListOf()
         private set
     var parentFile: DisplayableFile? = null
         private set
@@ -39,23 +40,26 @@ class TableModel : AbstractTableModel() {
 
     fun filterByExtension(ext: String) {
         filter = ext
-        files = doFilter(filter, cachedFiles)
+        files = doFilter()
         fireTableDataChanged()
     }
 
-    fun updateTable(newParent: DisplayableFile?, newFiles: List<DisplayableFile>) {
-        cachedFiles = newFiles
-        files = doFilter(filter, cachedFiles)
+    fun insertRow(file: DisplayableFile) {
+        cachedFiles.add(file)
+        if (filterFun(file)) {
+            files.add(file)
+            fireTableRowsInserted(files.size - 1, files.size - 1)
+        }
+    }
+
+    fun clearTable(newParent: DisplayableFile?) {
         parentFile = newParent
+        cachedFiles.clear()
+        files.clear()
         fireTableDataChanged()
     }
 
-    private fun doFilter(ext: String, allFiles: List<DisplayableFile>): List<DisplayableFile> {
-        return if (ext == "Show all files") allFiles
-               else allFiles.asSequence()
-                            .filter { it.isDirectory || it.extension == filter }
-                            .toList()
-    }
+    private fun doFilter() = cachedFiles.asSequence().filter { filterFun(it) }.toMutableList()
 }
 
 

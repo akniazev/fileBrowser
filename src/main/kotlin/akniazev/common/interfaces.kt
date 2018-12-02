@@ -3,7 +3,6 @@ package akniazev.common
 import java.awt.image.BufferedImage
 import java.time.ZonedDateTime
 
-
 /**
  * Interface to be implemented by the main UI class of the application.
  *
@@ -13,10 +12,9 @@ interface View {
     /**
      * Updates the representation of the current directory on the view with the result from the [Controller].
      *
-     * @param parent previous file in the hierarchy or null
-     * @param files contents of the current directory in the displayable format
+     * @param file single file from the current directory
      */
-    fun updateFileList(parent: DisplayableFile?, files: List<DisplayableFile>)
+    fun updateFileList(file: DisplayableFile)
 
     /**
      * Displays selected file attributes.
@@ -86,6 +84,18 @@ interface View {
      * Callback method, notifying the veiw that ftp is disconnected.
      */
     fun ftpDisconnected()
+
+    /**
+     * Indicates that the navigation to a directory has started. Can be used to prepare the view.
+     *
+     * @param newParent new file, to be used as the target to navigate up
+     */
+    fun startNavigation(newParent: DisplayableFile?)
+
+    /**
+     * Indicates that the navigation to a directory has ended.
+     */
+    fun endNavigation()
 }
 
 

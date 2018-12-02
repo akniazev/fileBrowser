@@ -26,6 +26,7 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
     private val centralPanel = JPanel()
     private val leftPanel = JPanel()
     private val topPanel = JPanel()
+    private val detailsPanel = JPanel()
 
     private val model = TableModel()
     private val table = JTable(model)
@@ -42,6 +43,7 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
     private val progressDialog = JDialog(this, "Loading", false)
 
     private val sizeHeader = createLabel("Size")
+    private val spinner = JLabel()
     private val previewNameLabel = JLabel()
     private val previewModifiedLabel = JLabel()
     private val previewSizeLabel = JLabel()
@@ -51,11 +53,10 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
     private val previewContentLabel = createLabel()
     private val contentPanel = JPanel()
 
-    private val connectFtpDialog = ConnectFtpDialog(this, "Connect FTP", controller)
+    private val connectFtpDialog = ConnectFtpDialog(this, "Connect to FTP", controller)
     private var detailsPanelBuilt = false
 
     private val connectFtpListener = ActionListener { connectFtpDialog.isVisible = true }
-
     private val disconnectFtpListener = ActionListener { controller.disconnectFtp() }
 
     init {
@@ -76,6 +77,7 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
             }
         })
 
+        assignNames()
         buildLeftPanel()
         buildCentralPanel()
         buildTopPanel()
@@ -86,27 +88,32 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
         add(centralPanel, BorderLayout.CENTER)
         add(rightPanel, BorderLayout.EAST)
 
-
-        addressBar.name = "addressBar"
-        table.name = "table"
-        upBtn.name = "upBtn"
-        backBtn.name = "backBtn"
-        forwardBtn.name = "forwardBtn"
-        previewText.name = "textPreview"
-        previewNameLabel.name = "previewNameLabel"
-        connectFtpDialog.name = "connectFtpDialog"
-        connectFtpBtn.name = "connectFtpBtn"
-
         attachListeners()
         onFileOpen(SystemFile(firstRoot))
+        table.requestFocus()
     }
 
     /**
      * {@inheritDoc}
      */
-    override fun updateFileList(parent: DisplayableFile?, files: List<DisplayableFile>) {
-        model.updateTable(parent, files)
-        progressDialog.isVisible = false
+    override fun updateFileList(file: DisplayableFile) {
+        model.insertRow(file)
+        spinner.isVisible = true
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    override fun startNavigation(newParent: DisplayableFile?) {
+        model.clearTable(newParent)
+        spinner.isVisible = true
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    override fun endNavigation() {
+        spinner.isVisible = false
     }
 
     /**
@@ -131,8 +138,8 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
 
         previewContentLabel.text = ""
         contentPanel.removeAll()
-        rightPanel.validate()
-        rightPanel.updateUI()
+        detailsPanel.validate()
+        detailsPanel.updateUI()
     }
 
     /**
@@ -144,8 +151,8 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
 
         contentPanel.removeAll()
         contentPanel.add(previewText)
-        rightPanel.validate()
-        rightPanel.updateUI()
+        detailsPanel.validate()
+        detailsPanel.updateUI()
     }
 
     /**
@@ -157,8 +164,8 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
 
         contentPanel.removeAll()
         contentPanel.add(previewImageLabel, BorderLayout.CENTER)
-        rightPanel.validate()
-        rightPanel.updateUI()
+        detailsPanel.validate()
+        detailsPanel.updateUI()
     }
 
     /**
@@ -176,7 +183,7 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
         backBtn.isEnabled = backPossible
         forwardBtn.isEnabled = forwardPossible
         upBtn.isEnabled = upPossible
-        rightPanel.updateUI()
+        detailsPanel.updateUI()
     }
 
     /**
@@ -191,14 +198,13 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
      * {@inheritDoc}
      */
     override fun failPreview(message: String) {
-        progressDialog.isVisible = false
         previewContentLabel.text = ""
         previewFailed.text = message
 
         contentPanel.removeAll()
         contentPanel.add(previewFailed, BorderLayout.CENTER)
-        rightPanel.validate()
-        rightPanel.updateUI()
+        detailsPanel.validate()
+        detailsPanel.updateUI()
     }
 
     /**
@@ -231,23 +237,36 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
         progressDialog.isVisible = true
     }
 
+    private fun assignNames() {
+        addressBar.name = "addressBar"
+        table.name = "table"
+        upBtn.name = "upBtn"
+        backBtn.name = "backBtn"
+        forwardBtn.name = "forwardBtn"
+        previewText.name = "textPreview"
+        previewNameLabel.name = "previewNameLabel"
+        connectFtpDialog.name = "connectFtpDialog"
+        connectFtpBtn.name = "connectFtpBtn"
+        previewImageLabel.name = "previewImage"
+        extensionFilter.name = "extensionFilter"
+    }
 
     private fun attachListeners() {
         backBtn.addActionListener {
-            progressDialog.isVisible = true
             controller.navigateBack()
+            table.requestFocus()
         }
         forwardBtn.addActionListener {
-            progressDialog.isVisible = true
             controller.navigateForward()
-
+            table.requestFocus()
         }
         upBtn.addActionListener {
-            progressDialog.isVisible = true
             onFileOpen(model.parentFile!!)
+            table.requestFocus()
         }
         connectFtpBtn.addActionListener(connectFtpListener)
         table.autoCreateRowSorter = true
+        table.rowSorter.toggleSortOrder(1)
         table.addMouseListener(object : MouseAdapter() {
             override fun mouseClicked(e: MouseEvent) {
                 val file = model.files[table.convertRowIndexToModel(table.selectedRow)]
@@ -265,8 +284,13 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
             put(KeyStroke.getKeyStroke("alt pressed RIGHT"), "navigateForward")
             put(KeyStroke.getKeyStroke("alt pressed LEFT"), "navigateBack")
             put(KeyStroke.getKeyStroke("pressed BACK_SPACE"), "navigateBack")
+            put(KeyStroke.getKeyStroke("pressed TAB"), "selectNextComponent")
+            put(KeyStroke.getKeyStroke("shift pressed TAB"), "selectPreviousComponent")
         }
+        table.actionMap
         table.actionMap.apply {
+            val nextRowAction = get("selectNextRow")
+            val previousRowAction = get("selectPreviousRow")
             put("handleSelection", onAction {
                 onFileOpen(model.files[table.convertRowIndexToModel(table.selectedRow)])
             })
@@ -276,25 +300,29 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
             })
             put("navigateBack", onAction {
                 if (backBtn.isEnabled){
-                    progressDialog.isVisible = true
                     controller.navigateBack()
+                    table.requestFocus()
                 }
             })
             put("navigateForward", onAction {
                 if (forwardBtn.isEnabled) {
-                    progressDialog.isVisible = true
                     controller.navigateForward()
+                    table.requestFocus()
                 }
             })
-            val nextRowAction = get("selectNextRow")
             put("selectNextRow", onAction {
                 nextRowAction.actionPerformed(it)
                 showDetails(model.files[table.convertRowIndexToModel(table.selectedRow)])
             })
-            val previousRowAction = get("selectPreviousRow")
             put("selectPreviousRow", onAction {
                 previousRowAction.actionPerformed(it)
                 showDetails(model.files[table.convertRowIndexToModel(table.selectedRow)])
+            })
+            put("selectNextComponent", onAction {
+                extensionFilter.requestFocus()
+            })
+            put("selectPreviousComponent", onAction {
+                addressBar.requestFocus()
             })
         }
 
@@ -349,12 +377,29 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
     }
 
     private fun prepareRightPanel() {
-        rightPanel.apply {
-            minimumSize = Dimension(220, rightPanel.height)
-            preferredSize = Dimension(220, rightPanel.height)
-            layout = BoxLayout(rightPanel, BoxLayout.Y_AXIS)
+        detailsPanel.apply {
+            minimumSize = Dimension(220, detailsPanel.height)
+            preferredSize = Dimension(220, detailsPanel.height)
+            layout = BoxLayout(detailsPanel, BoxLayout.Y_AXIS)
             background = Color.WHITE
         }
+        spinner.icon = ImageIcon(javaClass.getResource("/icons/spinner.gif"))
+        spinner.horizontalAlignment = SwingConstants.CENTER
+        val spinnerFooter = JPanel().apply {
+            minimumSize = Dimension(220, 50)
+            preferredSize = Dimension(220, 50   )
+            layout = BorderLayout()
+            background = Color.WHITE
+            add(spinner)
+        }
+        rightPanel.apply {
+            minimumSize = Dimension(220, this.height)
+            preferredSize = Dimension(220, this.height)
+            layout = BorderLayout(0, 0)
+            background = Color.WHITE
+        }
+        rightPanel.add(detailsPanel, BorderLayout.CENTER)
+        rightPanel.add(spinnerFooter, BorderLayout.SOUTH)
     }
 
     private fun buildRightPanel(){
@@ -369,7 +414,7 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
             maximumSize = contentPanelSize
             alignmentX = Component.LEFT_ALIGNMENT
             layout = BorderLayout(0, 0)
-            background = rightPanel.background
+            background = detailsPanel.background
         }
         previewImageLabel.preferredSize = contentPanelSize
         previewImageLabel.minimumSize = contentPanelSize
@@ -377,10 +422,10 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
             preferredSize = contentPanelSize
             minimumSize = contentPanelSize
             rows = 10
-            background = rightPanel.background
+            background = detailsPanel.background
             isEditable = false
         }
-        rightPanel.apply {
+        detailsPanel.apply {
             border = BorderFactory.createEmptyBorder(10, 10, 0, 10)
             add(Box.createRigidArea(Dimension(0, 45)))
 
@@ -403,7 +448,6 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
             add(Box.createRigidArea(SMALL_VERTICAL_GAP))
 
             add(contentPanel)
-            add(Box.createRigidArea(Dimension(0, 20)))
         }
     }
 
@@ -484,7 +528,6 @@ class MainFrame(private val controller: Controller) : JFrame(), View {
 
     private fun onFileOpen(file: DisplayableFile) {
         if (file.navigable) {
-            progressDialog.isVisible = true
             controller.navigate(file)
         } else {
             controller.tryOpen(file)
