@@ -42,6 +42,7 @@ User can choose to navigate to the next directory without waiting for the previo
 - Added validation for FTP parameters.  
 
 #### Further improvements  
+- Improve sorting mechanism to display directories before files (although this might affect loading speed).
 - OS-specific implementations to get more file attributes.
-- Support several FTP connections simultaneously
+- Support several FTP connections simultaneously.
 - Search mechanism.

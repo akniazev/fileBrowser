@@ -245,11 +245,9 @@ class ControllerImpl : Controller {
      * If the file refers to the zip archive, retrieves [java.nio.file.FileSystem] for it
      * and resolves current target to root of this FS.
      *
-     * The status of the job is monitored by passing lambda with reference to [kotlinx.coroutines.Deferred.isActive]
-     * to [listChildren], that walks the file tree. Thus, if the job is canceled by the user, the coroutine stops.
-     *
-     * If the job was completed successfully - invokes [View.updateFileList] with the result.
-     * Otherwise invokes [View.failWithMessage].
+     * Uses [ReceiveChannel] to obtain file entries one by one and show them to the use without waiting for the whole
+     * directory to load.
+     * On error invokes [View.failWithMessage].
      * [updatePosition] function takes care of updating the navigation stacks.
      *
      * @param file directory or zip file, target of the navigation
@@ -258,7 +256,6 @@ class ControllerImpl : Controller {
      * @see java.nio.file.FileSystem
      * @see kotlinx.coroutines
      * @see listChildren
-     * @see View.updateFileList
      * @see View.failWithMessage
      */
     private fun doNavigate(file: DisplayableFile, updatePosition: (DisplayableFile) -> Unit) {
@@ -308,11 +305,10 @@ class ControllerImpl : Controller {
     }
 
     /**
-     * Produces the list of all the directory contents.
-     * Uses [isActive] param to monitor the state of the job and stops when it's no longer needed.
+     * Produces the list of all the directory contents. Invokes [SendChannel.send] for every file in the directory.
+     * Uses [isActive] property of the [CoroutineScope] to monitor the state of the job and stops when it's no longer needed.
      *
      * @see DisplayableFile
-     * @see java.nio.file.Files.walkFileTree
      * @see org.apache.commons.vfs2.FileObject
      */
     @UseExperimental(ExperimentalCoroutinesApi::class)
